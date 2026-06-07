@@ -17,16 +17,30 @@ QString generate(int length) {
         "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         "0123456789"
         "!@#$%^&*()-_=+[]{}:,.?";
-
-    QByteArray buf(length, '\0');
-    randombytes_buf(buf.data(), static_cast<size_t>(length));
+    const int alphabetSize = static_cast<int>(sizeof(alphabet) - 1);
+    const int maxUnbiased = 256 - (256 % alphabetSize);
 
     QString result;
     result.reserve(length);
-    for (int i = 0; i < length; ++i) {
-        const unsigned char idx = static_cast<unsigned char>(buf[i]) % (sizeof(alphabet) - 1);
+
+    QByteArray buf;
+    buf.resize(64);
+    int offset = 64;
+
+    while (result.size() < length) {
+        if (offset >= buf.size()) {
+            randombytes_buf(buf.data(), static_cast<size_t>(buf.size()));
+            offset = 0;
+        }
+
+        const unsigned char value = static_cast<unsigned char>(buf[offset++]);
+        if (value >= maxUnbiased) {
+            continue;
+        }
+        const int idx = value % alphabetSize;
         result.append(QChar::fromLatin1(alphabet[idx]));
     }
+
     sodium_memzero(buf.data(), static_cast<size_t>(buf.size()));
     return result;
 }

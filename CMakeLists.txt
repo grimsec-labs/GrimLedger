@@ -98,7 +98,9 @@ set(SOURCES
     src/utils/AppSettings.cpp
     src/utils/DialogUtils.cpp
     src/bridge/OriginMatcher.cpp
+    src/bridge/BridgeAuth.cpp
     src/bridge/CredentialBridgeServer.cpp
+    src/utils/SqliteUtils.cpp
     src/markdown/MarkdownRenderer.cpp
     src/markdown/SyntaxHighlighter.cpp
 )
@@ -144,7 +146,11 @@ set(HEADERS
     src/utils/AppSettings.h
     src/utils/DialogUtils.h
     src/bridge/OriginMatcher.h
+    src/bridge/BridgeAuth.h
     src/bridge/CredentialBridgeServer.h
+    src/models/CredentialSummary.h
+    src/utils/RepositoryResult.h
+    src/utils/SqliteUtils.h
     src/markdown/MarkdownRenderer.h
     src/markdown/SyntaxHighlighter.h
 )
@@ -175,11 +181,39 @@ target_link_libraries(GrimLedger PRIVATE
     sodium
 )
 
-add_executable(grimledger_host tools/grimledger_host/main.cpp)
-target_link_libraries(grimledger_host PRIVATE Qt6::Core Qt6::Network)
+add_executable(grimledger_host
+    tools/grimledger_host/main.cpp
+    src/bridge/BridgeAuth.cpp
+)
+set_target_properties(grimledger_host PROPERTIES AUTOMOC OFF AUTOUIC OFF AUTORCC OFF)
+target_include_directories(grimledger_host PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(grimledger_host PRIVATE Qt6::Core Qt6::Network sodium)
 if(WIN32)
     set_target_properties(grimledger_host PROPERTIES WIN32_EXECUTABLE FALSE)
 endif()
+
+enable_testing()
+
+function(add_grimledger_test name)
+    add_executable(${name} tests/${name}.cpp)
+    set_target_properties(${name} PROPERTIES AUTOMOC OFF AUTOUIC OFF AUTORCC OFF)
+    target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    if(${name} STREQUAL "test_origin_matcher")
+        target_sources(${name} PRIVATE src/bridge/OriginMatcher.cpp)
+        target_link_libraries(${name} PRIVATE Qt6::Core)
+    elseif(${name} STREQUAL "test_sqlite_utils")
+        target_sources(${name} PRIVATE src/utils/SqliteUtils.cpp)
+        target_link_libraries(${name} PRIVATE sqlite3_static)
+    elseif(${name} STREQUAL "test_bridge_auth")
+        target_sources(${name} PRIVATE src/bridge/BridgeAuth.cpp)
+        target_link_libraries(${name} PRIVATE Qt6::Core sodium)
+    endif()
+    add_test(NAME ${name} COMMAND ${name})
+endfunction()
+
+add_grimledger_test(test_origin_matcher)
+add_grimledger_test(test_sqlite_utils)
+add_grimledger_test(test_bridge_auth)
 
 if(WIN32)
     set_target_properties(GrimLedger PROPERTIES WIN32_EXECUTABLE TRUE)

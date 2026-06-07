@@ -1,3 +1,5 @@
+#include "bridge/BridgeAuth.h"
+
 #include <QCoreApplication>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -83,8 +85,27 @@ bool writeNativeMessage(const QByteArray& payload) {
 }
 
 QByteArray forwardToDesktop(const QByteArray& requestLine) {
+    QByteArray sessionToken;
+    if (!BridgeAuth::readSessionToken(sessionToken)) {
+        QJsonObject err;
+        err.insert(QStringLiteral("ok"), false);
+        err.insert(QStringLiteral("error"), QStringLiteral("GrimLedger bridge session is offline."));
+        return QJsonDocument(err).toJson(QJsonDocument::Compact);
+    }
+
+    QJsonDocument inDoc = QJsonDocument::fromJson(requestLine);
+    if (!inDoc.isObject()) {
+        QJsonObject err;
+        err.insert(QStringLiteral("ok"), false);
+        err.insert(QStringLiteral("error"), QStringLiteral("Invalid JSON."));
+        return QJsonDocument(err).toJson(QJsonDocument::Compact);
+    }
+
+    QJsonObject req = inDoc.object();
+    req.insert(QStringLiteral("token"), QString::fromUtf8(sessionToken));
+
     QLocalSocket socket;
-    socket.connectToServer(QStringLiteral("grimledger-bridge"));
+    socket.connectToServer(BridgeAuth::endpointName());
     if (!socket.waitForConnected(2000)) {
         QJsonObject err;
         err.insert(QStringLiteral("ok"), false);
@@ -92,7 +113,8 @@ QByteArray forwardToDesktop(const QByteArray& requestLine) {
         return QJsonDocument(err).toJson(QJsonDocument::Compact);
     }
 
-    socket.write(requestLine.trimmed() + '\n');
+    const QByteArray line = QJsonDocument(req).toJson(QJsonDocument::Compact) + '\n';
+    socket.write(line);
     socket.flush();
     if (!socket.waitForReadyRead(10000)) {
         QJsonObject err;
@@ -102,10 +124,10 @@ QByteArray forwardToDesktop(const QByteArray& requestLine) {
     }
 
     while (socket.canReadLine() || socket.waitForReadyRead(200)) {
-        const QByteArray line = socket.readLine().trimmed();
-        if (!line.isEmpty()) {
+        const QByteArray responseLine = socket.readLine().trimmed();
+        if (!responseLine.isEmpty()) {
             socket.disconnectFromServer();
-            return line;
+            return responseLine;
         }
     }
 

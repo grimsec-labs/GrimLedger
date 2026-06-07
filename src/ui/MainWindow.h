@@ -10,6 +10,7 @@
 #include <memory>
 #include "models/Note.h"
 #include "models/Credential.h"
+#include "models/CredentialSummary.h"
 #include "storage/NoteRepository.h"
 #include "storage/AttachmentRepository.h"
 #include "markdown/MarkdownRenderer.h"
@@ -41,6 +42,8 @@ public:
         VaultSession& session,
         QWidget* parent = nullptr);
     ~MainWindow() override;
+
+    void onVaultUnlocked();
 
 private slots:
     void onSectionSelected(SidebarSection section, qint64 id);
@@ -100,7 +103,7 @@ private:
     MarkdownRenderer::ImageUrlResolver imageResolver() const;
     void startBridge();
     void stopBridge();
-    bool confirmBridgeFill(const QString& label, const QString& origin);
+    void clearSensitiveUiState();
 
 protected:
     bool eventFilter(QObject* obj, QEvent* event) override;
@@ -140,7 +143,8 @@ protected:
     QLabel* m_emptyEditorLabel = nullptr;
 
     QVector<Note> m_cachedNotes;
-    QVector<Credential> m_cachedCredentials;
+    QVector<CredentialSummary> m_cachedCredentials;
+    QLabel* m_bridgeLabel = nullptr;
     qint64 m_currentNoteId = 0;
     qint64 m_currentCredentialId = 0;
     qint64 m_currentFolderId = 0;

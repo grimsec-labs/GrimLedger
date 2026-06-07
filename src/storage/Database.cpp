@@ -135,5 +135,32 @@ bool Database::initializeSchema() {
         CREATE INDEX IF NOT EXISTS idx_credentials_updated ON credentials(updated_at DESC);
     )SQL";
 
-    return execute(QString::fromUtf8(schema));
+    if (!execute(QString::fromUtf8(schema))) {
+        return false;
+    }
+
+    sqlite3_stmt* pragmaStmt = nullptr;
+    bool hasAllowSubdomains = false;
+    if (sqlite3_prepare_v2(
+            m_db,
+            "PRAGMA table_info(credentials);",
+            -1,
+            &pragmaStmt,
+            nullptr) == SQLITE_OK) {
+        while (sqlite3_step(pragmaStmt) == SQLITE_ROW) {
+            const char* name = reinterpret_cast<const char*>(sqlite3_column_text(pragmaStmt, 1));
+            if (name && qstrcmp(name, "allow_subdomains") == 0) {
+                hasAllowSubdomains = true;
+                break;
+            }
+        }
+        sqlite3_finalize(pragmaStmt);
+    }
+
+    if (!hasAllowSubdomains) {
+        return execute(QStringLiteral(
+            "ALTER TABLE credentials ADD COLUMN allow_subdomains INTEGER NOT NULL DEFAULT 0;"));
+    }
+
+    return true;
 }

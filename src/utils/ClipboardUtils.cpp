@@ -3,6 +3,7 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QTimer>
+#include <QPointer>
 
 namespace ClipboardUtils {
 
@@ -10,15 +11,19 @@ void copyTextWithAutoClear(const QString& text, int clearAfterMs) {
     if (text.isEmpty()) {
         return;
     }
-    QClipboard* clip = QApplication::clipboard();
-    if (!clip) {
-        return;
-    }
-    clip->setText(text);
 
-    QTimer::singleShot(clearAfterMs, clip, [clip, text]() {
-        if (clip->text() == text) {
-            clip->clear();
+    if (auto* clipboard = QApplication::clipboard()) {
+        clipboard->setText(text);
+    }
+
+    const QPointer<QClipboard> clipboard = QApplication::clipboard();
+    const QString captured = text;
+    QTimer::singleShot(clearAfterMs, qApp, [clipboard, captured]() {
+        if (!clipboard) {
+            return;
+        }
+        if (clipboard->text() == captured) {
+            clipboard->clear();
         }
     });
 }

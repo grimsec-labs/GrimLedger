@@ -32,3 +32,33 @@ void AppSettings::incrementFailedUnlockAttempts() {
 void AppSettings::resetFailedUnlockAttempts() {
     g_failedUnlockAttempts = 0;
 }
+
+bool AppSettings::browserBridgeEnabled() {
+    QSettings settings;
+    return settings.value(QStringLiteral("security/browserBridgeEnabled"), false).toBool();
+}
+
+void AppSettings::setBrowserBridgeEnabled(bool enabled) {
+    QSettings settings;
+    settings.setValue(QStringLiteral("security/browserBridgeEnabled"), enabled);
+}
+
+bool AppSettings::autoLockEnabled() {
+    QSettings settings;
+    return settings.value(QStringLiteral("security/autoLockEnabled"), true).toBool();
+}
+
+void AppSettings::setAutoLockEnabled(bool enabled) {
+    QSettings settings;
+    settings.setValue(QStringLiteral("security/autoLockEnabled"), enabled);
+}
+
+int AppSettings::autoLockMinutes() {
+    QSettings settings;
+    return settings.value(QStringLiteral("security/autoLockMinutes"), 15).toInt();
+}
+
+void AppSettings::setAutoLockMinutes(int minutes) {
+    QSettings settings;
+    settings.setValue(QStringLiteral("security/autoLockMinutes"), minutes);
+}

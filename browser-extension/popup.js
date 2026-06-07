@@ -17,12 +17,16 @@ function nativeRequest(payload) {
   });
 }
 
-async function getActiveTabOrigin() {
+async function getActiveTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.url || !tab.url.startsWith("http")) {
+  if (!tab?.id || !tab.url || !tab.url.startsWith("http")) {
     return null;
   }
-  return new URL(tab.url).origin;
+  return {
+    tabId: tab.id,
+    origin: new URL(tab.url).origin,
+    url: tab.url,
+  };
 }
 
 async function refresh() {
@@ -37,25 +41,25 @@ async function refresh() {
       return;
     }
 
-    const origin = await getActiveTabOrigin();
-    if (!origin) {
+    const tab = await getActiveTab();
+    if (!tab) {
       statusEl.textContent = "Open an http(s) page to match vault keys.";
       return;
     }
 
-    const result = await nativeRequest({ action: "list_matches", origin });
+    const result = await nativeRequest({ action: "list_matches", origin: tab.origin });
     const matches = result.matches || [];
     if (matches.length === 0) {
-      statusEl.textContent = `No vault keys for ${origin}`;
+      statusEl.textContent = `No vault keys for ${tab.origin}`;
       return;
     }
 
-    statusEl.textContent = `${matches.length} match(es) for ${origin}`;
+    statusEl.textContent = `${matches.length} match(es) for ${tab.origin}`;
     for (const match of matches) {
       const btn = document.createElement("button");
       btn.className = "match";
       btn.textContent = `${match.label} — ${match.username || "(no username)"}`;
-      btn.addEventListener("click", () => fillMatch(match.id, origin));
+      btn.addEventListener("click", () => fillMatch(match.id, tab));
       matchesEl.appendChild(btn);
     }
   } catch (error) {
@@ -64,16 +68,33 @@ async function refresh() {
   }
 }
 
-async function fillMatch(id, origin) {
+async function fillMatch(id, tab) {
+  const nonce = crypto.randomUUID();
   try {
-    const fill = await nativeRequest({ action: "fill", id, origin });
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    await chrome.tabs.sendMessage(tab.id, {
+    const fill = await nativeRequest({
+      action: "fill",
+      id,
+      origin: tab.origin,
+      nonce,
+    });
+
+    const currentTab = await chrome.tabs.get(tab.tabId);
+    if (!currentTab?.url || new URL(currentTab.url).origin !== tab.origin) {
+      throw new Error("Active tab changed before fill could complete.");
+    }
+
+    const fillResult = await chrome.tabs.sendMessage(tab.tabId, {
       action: "fill_on_page",
       username: fill.username,
       password: fill.password,
+      expectedOrigin: tab.origin,
     });
-    statusEl.textContent = "Filled. Confirm in GrimLedger if prompted.";
+
+    if (!fillResult || !fillResult.ok) {
+      throw new Error("Could not find login fields on this page.");
+    }
+
+    statusEl.textContent = "Filled successfully.";
   } catch (error) {
     statusEl.textContent = error.message;
     statusEl.classList.add("error");

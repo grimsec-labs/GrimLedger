@@ -10,4 +10,12 @@ public:
     static int failedUnlockAttempts();
     static void incrementFailedUnlockAttempts();
     static void resetFailedUnlockAttempts();
+
+    static bool browserBridgeEnabled();
+    static void setBrowserBridgeEnabled(bool enabled);
+
+    static bool autoLockEnabled();
+    static void setAutoLockEnabled(bool enabled);
+    static int autoLockMinutes();
+    static void setAutoLockMinutes(int minutes);
 };

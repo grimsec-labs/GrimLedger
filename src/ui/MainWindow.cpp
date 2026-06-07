@@ -22,6 +22,7 @@
 #include "utils/TimeUtils.h"
 #include "utils/Theme.h"
 #include "utils/DialogUtils.h"
+#include "utils/AppSettings.h"
 #include "ui/GrimInputDialog.h"
 #include "utils/SecurityLimits.h"
 #include "utils/PathSafety.h"
@@ -68,6 +69,8 @@ MainWindow::MainWindow(Database& db, VaultSession& session, QWidget* parent)
             QStringLiteral("Auto-lock: %1 min").arg(m_session.autoLockMinutes()));
     });
     connect(&m_session, &VaultSession::lockRequested, this, &MainWindow::onLockVault);
+    m_session.setAutoLockEnabled(AppSettings::autoLockEnabled());
+    m_session.setAutoLockMinutes(AppSettings::autoLockMinutes());
 
     QTimer* previewTimer = new QTimer(this);
     previewTimer->setInterval(400);
@@ -250,6 +253,18 @@ void MainWindow::buildUi() {
             ? QStringLiteral("Auto-lock: %1 min").arg(min)
             : QStringLiteral("Auto-lock: off"));
     });
+    connect(m_settingsPanel, &SettingsWindow::browserBridgeChanged, this, [this](bool on) {
+        if (on) {
+            startBridge();
+        } else {
+            stopBridge();
+        }
+        if (m_bridgeLabel) {
+            m_bridgeLabel->setText(on && m_bridge
+                ? QStringLiteral("Bridge: on")
+                : QStringLiteral("Bridge: off"));
+        }
+    });
     connect(m_settingsPanel, &SettingsWindow::changePasswordRequested,
             this, &MainWindow::onChangePassword);
     connect(m_settingsPanel, &SettingsWindow::backupVaultRequested, this, &MainWindow::onBackupVault);
@@ -282,7 +297,11 @@ void MainWindow::buildUi() {
     m_savedLabel = new QLabel(QStringLiteral("Last saved: —"), this);
     m_encryptLabel = new QLabel(QStringLiteral("🔒 Vault Encrypted"), this);
     m_autolockLabel = new QLabel(
-        QStringLiteral("Auto-lock: %1 min").arg(m_session.autoLockMinutes()), this);
+        m_session.autoLockEnabled()
+            ? QStringLiteral("Auto-lock: %1 min").arg(m_session.autoLockMinutes())
+            : QStringLiteral("Auto-lock: off"),
+        this);
+    m_bridgeLabel = new QLabel(QStringLiteral("Bridge: off"), this);
 
     auto* lockBtn = new QPushButton(QStringLiteral("Lock"), this);
     lockBtn->setObjectName(QStringLiteral("SmallButton"));
@@ -294,6 +313,7 @@ void MainWindow::buildUi() {
     m_status->addWidget(new QLabel(QStringLiteral(" | "), this));
     m_status->addWidget(m_savedLabel);
     m_status->addPermanentWidget(m_encryptLabel);
+    m_status->addPermanentWidget(m_bridgeLabel);
     m_status->addPermanentWidget(m_autolockLabel);
     m_status->addPermanentWidget(lockBtn);
 
@@ -304,8 +324,7 @@ void MainWindow::buildUi() {
     addAction(saveAction);
 
     applyAccent(m_accent);
-    installEventFilter(this);
-    startBridge();
+    qApp->installEventFilter(this);
 }
 
 bool MainWindow::eventFilter(QObject* obj, QEvent* event) {
@@ -463,15 +482,15 @@ void MainWindow::showPasswordsMode() {
 void MainWindow::loadCredentials() {
     const QByteArray& key = m_session.key();
     m_cachedCredentials = m_credSearchQuery.trimmed().isEmpty()
-        ? m_credentials->listCredentials(key)
-        : m_credentials->searchCredentials(m_credSearchQuery, key);
+        ? m_credentials->listCredentialSummaries(key)
+        : m_credentials->searchCredentialSummaries(m_credSearchQuery, key);
     m_credList->setCredentials(m_cachedCredentials);
 
     if (m_currentCredentialId > 0) {
         const bool stillExists = std::any_of(
             m_cachedCredentials.cbegin(),
             m_cachedCredentials.cend(),
-            [this](const Credential& c) { return c.id == m_currentCredentialId; });
+            [this](const CredentialSummary& c) { return c.id == m_currentCredentialId; });
         if (stillExists) {
             m_credList->selectCredential(m_currentCredentialId);
             return;
@@ -495,11 +514,22 @@ void MainWindow::loadCredential(qint64 id) {
     }
 
     m_currentCredentialId = id;
+    m_credEditor->setIntegrityError(cred->integrityError);
+    if (cred->integrityError) {
+        m_credEditor->setLabel(cred->label);
+        m_credEditor->setUsername(QString());
+        m_credEditor->setPassword(QString());
+        m_credEditor->setUrl(QString());
+        m_credEditor->setNotes(QString());
+        return;
+    }
+
     m_credEditor->setLabel(cred->label);
     m_credEditor->setUsername(cred->username);
     m_credEditor->setPassword(cred->password);
     m_credEditor->setUrl(cred->url);
     m_credEditor->setNotes(cred->notes);
+    m_credEditor->setAllowSubdomains(cred->allowSubdomains);
     m_credEditor->setSavedState(true, cred->updatedAt);
     m_session.resetActivityTimer();
 }
@@ -516,6 +546,7 @@ bool MainWindow::saveCurrentCredential(bool showErrorDialog) {
     c.password = m_credEditor->password();
     c.url = m_credEditor->url();
     c.notes = m_credEditor->notes();
+    c.allowSubdomains = m_credEditor->allowSubdomains();
 
     if (c.label.isEmpty()) {
         if (showErrorDialog) {
@@ -547,7 +578,10 @@ bool MainWindow::saveCurrentCredential(bool showErrorDialog) {
 
 void MainWindow::onCredentialSelected(qint64 id) {
     if (m_currentCredentialId > 0 && m_currentCredentialId != id) {
-        saveCurrentCredential(false);
+        if (!saveCurrentCredential(false)) {
+            m_credList->selectCredential(m_currentCredentialId);
+            return;
+        }
     }
     loadCredential(id);
 }
@@ -587,7 +621,13 @@ void MainWindow::onDeleteCredential(qint64 id) {
         return;
     }
 
-    m_credentials->deleteCredential(id);
+    if (!m_credentials->deleteCredential(id)) {
+        DialogUtils::warning(
+            this,
+            QStringLiteral("Delete Vault Key"),
+            QStringLiteral("Could not delete credential."));
+        return;
+    }
     if (m_currentCredentialId == id) {
         m_currentCredentialId = 0;
         m_credEditor->clearFields();
@@ -792,9 +832,19 @@ void MainWindow::onLockVault() {
     }
 
     m_lockingVault = true;
+    const bool credSaved = saveCurrentCredential(false);
+    const bool noteSaved = saveCurrentNote(false, false, false);
+    if (!credSaved || !noteSaved) {
+        if (!DialogUtils::question(
+                this,
+                QStringLiteral("Lock Vault"),
+                QStringLiteral("Some changes could not be saved. Lock anyway and discard unsaved edits?"))) {
+            m_lockingVault = false;
+            return;
+        }
+    }
     stopBridge();
-    saveCurrentCredential(false);
-    saveCurrentNote(false, false, false);
+    clearSensitiveUiState();
     m_session.lock();
     m_lockingVault = false;
     emit vaultLocked();
@@ -978,8 +1028,12 @@ void MainWindow::onRestoreVault(const QString& path) {
         m_db.close();
         restored = VaultRepository::restoreFromBackup(path, password, m_db.path(), &error);
         if (!m_db.open(m_db.path())) {
+            stopBridge();
+            clearSensitiveUiState();
+            m_session.lock();
             DialogUtils::critical(this, QStringLiteral("Restore"),
-                QStringLiteral("Restored vault could not be reopened."));
+                QStringLiteral("Restored vault could not be reopened. Vault is locked."));
+            emit vaultLocked();
             return;
         }
         m_vault = std::make_unique<VaultRepository>(m_db);
@@ -995,8 +1049,12 @@ void MainWindow::onRestoreVault(const QString& path) {
         restored = VaultRepository::restoreLegacyBackupInSession(
             path, m_session.key(), m_db.path(), &error);
         if (!m_db.open(m_db.path())) {
+            stopBridge();
+            clearSensitiveUiState();
+            m_session.lock();
             DialogUtils::critical(this, QStringLiteral("Restore"),
-                QStringLiteral("Restored vault could not be reopened."));
+                QStringLiteral("Restored vault could not be reopened. Vault is locked."));
+            emit vaultLocked();
             return;
         }
         m_vault = std::make_unique<VaultRepository>(m_db);
@@ -1014,7 +1072,9 @@ void MainWindow::onRestoreVault(const QString& path) {
         return;
     }
 
+    stopBridge();
     closeNoteEditor();
+    clearSensitiveUiState();
     m_cachedNotes.clear();
     m_preview->setMarkdown(QString(), imageResolver());
     m_session.lock();
@@ -1168,8 +1228,26 @@ void MainWindow::updateStatusBar() {
     m_charLabel->setText(QStringLiteral("Chars: %1").arg(m_editor->charCount()));
 }
 
+void MainWindow::onVaultUnlocked() {
+    loadNotes();
+    refreshSidebar();
+    startBridge();
+}
+
+void MainWindow::clearSensitiveUiState() {
+    m_currentCredentialId = 0;
+    m_credSearchQuery.clear();
+    m_cachedCredentials.clear();
+    m_credList->clearSelection();
+    m_credEditor->clearFields();
+}
+
 void MainWindow::startBridge() {
-    if (m_bridge) {
+    stopBridge();
+    if (!AppSettings::browserBridgeEnabled() || !m_session.isUnlocked()) {
+        if (m_bridgeLabel) {
+            m_bridgeLabel->setText(QStringLiteral("Bridge: off"));
+        }
         return;
     }
 
@@ -1177,24 +1255,55 @@ void MainWindow::startBridge() {
     m_bridge->setRepository(m_credentials.get());
     m_bridge->setUnlockedChecker([this]() { return m_session.isUnlocked(); });
     m_bridge->setSessionKeyProvider([this]() { return m_session.key(); });
-    m_bridge->setConfirmFillHandler([this](const QString& label, const QString& origin) {
-        return confirmBridgeFill(label, origin);
+    m_bridge->setBridgeEnabledChecker([]() { return AppSettings::browserBridgeEnabled(); });
+    m_bridge->setConfirmFillHandler([this](
+            const QString& label,
+            const QString& origin,
+            std::function<void(bool approved)> callback) {
+        QTimer::singleShot(0, this, [this, label, origin, callback]() {
+            if (!m_session.isUnlocked()) {
+                callback(false);
+                return;
+            }
+            const bool approved = DialogUtils::question(
+                this,
+                QStringLiteral("Browser Fill"),
+                QStringLiteral("Allow browser extension to fill \"%1\" on %2?")
+                    .arg(label, origin));
+            callback(approved && m_session.isUnlocked());
+        });
     });
-    m_bridge->start();
+    connect(m_bridge.get(), &CredentialBridgeServer::listenFailed, this, [this](const QString& reason) {
+        if (m_bridgeLabel) {
+            m_bridgeLabel->setText(QStringLiteral("Bridge: error"));
+        }
+        DialogUtils::warning(this, QStringLiteral("Browser Bridge"), reason);
+    });
+
+    if (!m_bridge->start()) {
+        if (m_bridgeLabel) {
+            m_bridgeLabel->setText(QStringLiteral("Bridge: error"));
+        }
+        m_bridge.reset();
+        return;
+    }
+
+    if (m_bridgeLabel) {
+        m_bridgeLabel->setText(QStringLiteral("Bridge: on"));
+    }
 }
 
 void MainWindow::stopBridge() {
     if (!m_bridge) {
+        if (m_bridgeLabel) {
+            m_bridgeLabel->setText(QStringLiteral("Bridge: off"));
+        }
         return;
     }
+    m_bridge->cancelPendingRequests();
     m_bridge->stop();
     m_bridge.reset();
-}
-
-bool MainWindow::confirmBridgeFill(const QString& label, const QString& origin) {
-    return DialogUtils::question(
-        this,
-        QStringLiteral("Browser Fill"),
-        QStringLiteral("Allow browser extension to fill \"%1\" on %2?")
-            .arg(label, origin));
+    if (m_bridgeLabel) {
+        m_bridgeLabel->setText(QStringLiteral("Bridge: off"));
+    }
 }

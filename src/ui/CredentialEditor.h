@@ -7,6 +7,7 @@ class QLineEdit;
 class QPlainTextEdit;
 class QPushButton;
 class QLabel;
+class QCheckBox;
 
 class CredentialEditor : public QWidget {
     Q_OBJECT
@@ -19,12 +20,15 @@ public:
     QString password() const;
     QString url() const;
     QString notes() const;
+    bool allowSubdomains() const;
 
     void setLabel(const QString& text);
     void setUsername(const QString& text);
     void setPassword(const QString& text);
     void setUrl(const QString& text);
     void setNotes(const QString& text);
+    void setAllowSubdomains(bool enabled);
+    void setIntegrityError(bool errored);
     void setSavedState(bool saved, const QDateTime& updatedAt = QDateTime());
     void clearFields();
 
@@ -46,4 +50,5 @@ private:
     QPlainTextEdit* m_notesEdit = nullptr;
     QPushButton* m_saveButton = nullptr;
     QLabel* m_statusLabel = nullptr;
+    QCheckBox* m_subdomainCheck = nullptr;
 };

@@ -59,18 +59,29 @@ void SettingsWindow::buildUi() {
     auto* secForm = new QFormLayout(security);
 
     m_autoLockCheck = new QCheckBox(QStringLiteral("Auto-lock after inactivity"), this);
-    m_autoLockCheck->setChecked(true);
+    m_autoLockCheck->setChecked(AppSettings::autoLockEnabled());
     m_autoLockSpin = new QSpinBox(this);
     m_autoLockSpin->setRange(1, 120);
-    m_autoLockSpin->setValue(15);
+    m_autoLockSpin->setValue(AppSettings::autoLockMinutes());
     m_autoLockSpin->setSuffix(QStringLiteral(" min"));
     connect(m_autoLockCheck, &QCheckBox::toggled, this, [this](bool on) {
+        AppSettings::setAutoLockEnabled(on);
         emit autoLockChanged(on, m_autoLockSpin->value());
     });
     connect(m_autoLockSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int v) {
+        AppSettings::setAutoLockMinutes(v);
         emit autoLockChanged(m_autoLockCheck->isChecked(), v);
     });
     secForm->addRow(m_autoLockCheck, m_autoLockSpin);
+
+    m_browserBridgeCheck = new QCheckBox(
+        QStringLiteral("Enable browser bridge (Chrome/Edge extension)"), this);
+    m_browserBridgeCheck->setChecked(AppSettings::browserBridgeEnabled());
+    connect(m_browserBridgeCheck, &QCheckBox::toggled, this, [this](bool on) {
+        AppSettings::setBrowserBridgeEnabled(on);
+        emit browserBridgeChanged(on);
+    });
+    secForm->addRow(m_browserBridgeCheck);
 
     m_selfDestructCheck = new QCheckBox(
         QStringLiteral("Destroy vault after 3 failed unlock attempts"), this);
@@ -189,4 +200,13 @@ bool SettingsWindow::selfDestructEnabled() const {
 void SettingsWindow::setSelfDestructEnabled(bool enabled) {
     QSignalBlocker blocker(m_selfDestructCheck);
     m_selfDestructCheck->setChecked(enabled);
+}
+
+bool SettingsWindow::browserBridgeEnabled() const {
+    return m_browserBridgeCheck->isChecked();
+}
+
+void SettingsWindow::setBrowserBridgeEnabled(bool enabled) {
+    QSignalBlocker blocker(m_browserBridgeCheck);
+    m_browserBridgeCheck->setChecked(enabled);
 }

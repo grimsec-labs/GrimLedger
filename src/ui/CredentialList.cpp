@@ -33,15 +33,21 @@ void CredentialList::buildUi() {
     connect(m_list, &QListWidget::itemClicked, this, [this](QListWidgetItem*) {
         onItemClicked();
     });
+    connect(m_list, &QListWidget::currentRowChanged, this, [this](int row) {
+        if (row < 0) {
+            return;
+        }
+        onItemClicked();
+    });
 
     layout->addWidget(m_searchEdit);
     layout->addWidget(m_newButton);
     layout->addWidget(m_list, 1);
 }
 
-void CredentialList::setCredentials(const QVector<Credential>& creds) {
+void CredentialList::setCredentials(const QVector<CredentialSummary>& creds) {
     m_list->clear();
-    for (const Credential& c : creds) {
+    for (const CredentialSummary& c : creds) {
         QString label = c.label.isEmpty() ? QStringLiteral("(Unnamed)") : c.label;
         if (!c.username.isEmpty()) {
             label += QStringLiteral(" — ") + c.username;

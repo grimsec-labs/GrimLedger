@@ -14,6 +14,7 @@ function findLoginFields() {
     if (input === passwordInput) continue;
     const type = (input.getAttribute("type") || "").toLowerCase();
     if (type === "hidden" || type === "submit" || type === "button") continue;
+    if (input.autocomplete === "new-password") continue;
     usernameInput = input;
     break;
   }
@@ -44,8 +45,16 @@ function fillFields(username, password) {
   return true;
 }
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (sender.id !== chrome.runtime.id) {
+    return false;
+  }
+
   if (message.action === "fill_on_page") {
+    if (message.expectedOrigin && window.location.origin !== message.expectedOrigin) {
+      sendResponse({ ok: false, error: "origin mismatch" });
+      return true;
+    }
     sendResponse({ ok: fillFields(message.username || "", message.password || "") });
     return true;
   }

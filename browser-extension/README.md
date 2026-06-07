@@ -13,15 +13,18 @@ Connects Chrome/Edge to the unlocked GrimLedger desktop app via native messaging
 .\native-host\install-windows.ps1 -ExtensionId YOUR_EXTENSION_ID_HERE
 ```
 
-5. Unlock GrimLedger and keep it running.
-6. Add vault keys with a **URL** that matches the site (e.g. `https://github.com`).
-7. On a login page, open the GrimLedger extension popup and click a match to fill.
+5. In GrimLedger **Settings → Security**, enable **browser bridge** (disabled by default).
+6. Unlock GrimLedger and keep it running. The bridge restarts after each unlock.
+7. Add vault keys with an exact **URL** origin (scheme + host + port). Enable **Allow subdomains** only when needed.
+8. On a login page, open the GrimLedger extension popup and click a match to fill.
 
 ## Security
 
+- Enable the bridge only when you need browser fill. It is **off by default**.
 - GrimLedger must be **unlocked**; the bridge stops when you lock the vault.
-- Fill requests require **origin match** against the stored credential URL.
+- Fill requests require **exact origin match** (HTTPS credentials never fill on HTTP).
 - GrimLedger shows a **confirmation dialog** before sending a password to the browser.
+- The native host adds a per-session token; only the running GrimLedger instance can answer bridge requests.
 
 ## Troubleshooting
 

@@ -153,8 +153,8 @@ After 15 minutes of inactivity (configurable in Settings), the vault auto-locks.
 
 | Action | Result |
 |--------|--------|
-| **Backup Encrypted Vault** | Full database encrypted with your vault key → `.grimbak` file |
-| **Restore Encrypted Backup** | Replaces current vault (must be unlocked with same key) |
+| **Backup Encrypted Vault** | GRIMBKUP2 standalone envelope (password-verified) → `.grimbak` file |
+| **Restore Encrypted Backup** | Staged restore; unlock afterward with the backup password |
 | **Export Selected Note** | Plaintext `.md` file |
 | **Export All Notes** | Plaintext `.md` files in a folder |
 | **Export Encrypted Archive** | Same as encrypted backup |

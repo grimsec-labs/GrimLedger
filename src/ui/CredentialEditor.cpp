@@ -8,6 +8,7 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QLabel>
+#include <QCheckBox>
 
 CredentialEditor::CredentialEditor(QWidget* parent)
     : QWidget(parent) {
@@ -25,7 +26,7 @@ void CredentialEditor::buildUi() {
     heading->setObjectName(QStringLiteral("LoginTitle"));
 
     auto* hint = new QLabel(
-        QStringLiteral("Credentials are encrypted in your vault. Clipboard copies auto-clear after 20 seconds."),
+        QStringLiteral("Credentials are encrypted in your vault. Clipboard clear is best-effort and may not erase OS clipboard history."),
         this);
     hint->setObjectName(QStringLiteral("WarningLabel"));
     hint->setWordWrap(true);
@@ -65,6 +66,10 @@ void CredentialEditor::buildUi() {
     m_urlEdit->setPlaceholderText(QStringLiteral("https://example.com"));
     connect(m_urlEdit, &QLineEdit::textChanged, this, &CredentialEditor::contentChanged);
 
+    m_subdomainCheck = new QCheckBox(
+        QStringLiteral("Allow subdomains (e.g. app.example.com)"), this);
+    connect(m_subdomainCheck, &QCheckBox::toggled, this, &CredentialEditor::contentChanged);
+
     m_notesEdit = new QPlainTextEdit(this);
     m_notesEdit->setObjectName(QStringLiteral("MarkdownEditor"));
     m_notesEdit->setPlaceholderText(QStringLiteral("Security questions, backup codes, notes..."));
@@ -75,6 +80,7 @@ void CredentialEditor::buildUi() {
     form->addRow(QStringLiteral("Username"), m_userEdit);
     form->addRow(QStringLiteral("Password"), passRow);
     form->addRow(QStringLiteral("URL"), m_urlEdit);
+    form->addRow(QString(), m_subdomainCheck);
     form->addRow(QStringLiteral("Notes"), m_notesEdit);
 
     auto* btnRow = new QHBoxLayout();
@@ -111,12 +117,28 @@ QString CredentialEditor::username() const { return m_userEdit->text(); }
 QString CredentialEditor::password() const { return m_passEdit->text(); }
 QString CredentialEditor::url() const { return m_urlEdit->text().trimmed(); }
 QString CredentialEditor::notes() const { return m_notesEdit->toPlainText(); }
+bool CredentialEditor::allowSubdomains() const { return m_subdomainCheck->isChecked(); }
 
 void CredentialEditor::setLabel(const QString& text) { m_labelEdit->setText(text); }
 void CredentialEditor::setUsername(const QString& text) { m_userEdit->setText(text); }
 void CredentialEditor::setPassword(const QString& text) { m_passEdit->setText(text); }
 void CredentialEditor::setUrl(const QString& text) { m_urlEdit->setText(text); }
 void CredentialEditor::setNotes(const QString& text) { m_notesEdit->setPlainText(text); }
+void CredentialEditor::setAllowSubdomains(bool enabled) { m_subdomainCheck->setChecked(enabled); }
+
+void CredentialEditor::setIntegrityError(bool errored) {
+    const bool enabled = !errored;
+    m_labelEdit->setEnabled(enabled);
+    m_userEdit->setEnabled(enabled);
+    m_passEdit->setEnabled(enabled);
+    m_urlEdit->setEnabled(enabled);
+    m_notesEdit->setEnabled(enabled);
+    m_subdomainCheck->setEnabled(enabled);
+    m_saveButton->setEnabled(enabled);
+    if (errored) {
+        m_statusLabel->setText(QStringLiteral("Integrity error — this vault key cannot be edited."));
+    }
+}
 
 void CredentialEditor::setSavedState(bool saved, const QDateTime& updatedAt) {
     if (saved && updatedAt.isValid()) {
@@ -135,5 +157,7 @@ void CredentialEditor::clearFields() {
     m_passEdit->clear();
     m_urlEdit->clear();
     m_notesEdit->clear();
+    m_subdomainCheck->setChecked(false);
+    setIntegrityError(false);
     m_statusLabel->setText(QStringLiteral("Select or create a vault key"));
 }

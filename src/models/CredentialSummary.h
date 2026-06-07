@@ -3,15 +3,12 @@
 #include <QString>
 #include <QDateTime>
 
-struct Credential {
+struct CredentialSummary {
     qint64 id = 0;
     QString label;
     QString username;
-    QString password;
     QString url;
-    QString notes;
     bool allowSubdomains = false;
-    bool integrityError = false;
     QDateTime createdAt;
     QDateTime updatedAt;
 };

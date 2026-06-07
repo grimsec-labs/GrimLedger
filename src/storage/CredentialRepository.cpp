@@ -1,5 +1,7 @@
 #include "storage/CredentialRepository.h"
 #include "security/CryptoManager.h"
+#include "storage/DbTransaction.h"
+#include "utils/SqliteUtils.h"
 #include "utils/TimeUtils.h"
 
 #include <QDateTime>
@@ -18,78 +20,130 @@ QByteArray CredentialRepository::encryptField(
     return enc.value_or(QByteArray());
 }
 
-QString CredentialRepository::decryptField(
+DecryptResult<QString> CredentialRepository::decryptField(
     const QByteArray& blob,
     qint64 credId,
     const char* field,
     const QByteArray& key) const {
+    DecryptResult<QString> result;
+    if (blob.isEmpty()) {
+        result.status = DecryptStatus::Empty;
+        return result;
+    }
+
     const QByteArray aad = CryptoManager::credentialFieldAssociatedData(credId, field);
     const auto dec = CryptoManager::decryptField(blob, key, aad);
-    if (!dec) {
-        const auto legacy = CryptoManager::decryptLegacy(blob, key);
-        if (legacy) {
-            return QString::fromUtf8(*legacy);
-        }
-        return QString();
+    if (dec) {
+        result.status = dec->isEmpty() ? DecryptStatus::Empty : DecryptStatus::Ok;
+        result.value = QString::fromUtf8(*dec);
+        return result;
     }
-    return QString::fromUtf8(*dec);
+
+    const auto legacy = CryptoManager::decryptLegacy(blob, key);
+    if (legacy) {
+        result.status = legacy->isEmpty() ? DecryptStatus::Empty : DecryptStatus::Ok;
+        result.value = QString::fromUtf8(*legacy);
+        return result;
+    }
+
+    result.status = DecryptStatus::IntegrityError;
+    return result;
 }
 
 namespace {
 
-QString decryptCredField(
-    const QByteArray& blob,
-    qint64 credId,
-    const char* field,
-    const QByteArray& key) {
-    const QByteArray aad = CryptoManager::credentialFieldAssociatedData(credId, field);
-    const auto dec = CryptoManager::decryptField(blob, key, aad);
-    if (!dec) {
-        const auto legacy = CryptoManager::decryptLegacy(blob, key);
-        if (legacy) {
-            return QString::fromUtf8(*legacy);
-        }
-        return QString();
+bool readAllowSubdomains(sqlite3_stmt* stmt, int col) {
+    const int type = sqlite3_column_type(stmt, col);
+    if (type == SQLITE_NULL) {
+        return false;
     }
-    return QString::fromUtf8(*dec);
+    return sqlite3_column_int(stmt, col) != 0;
 }
 
-Credential rowToCredential(sqlite3_stmt* stmt, const QByteArray& key) {
+const char* kSelectColumns =
+    "SELECT id, encrypted_label, encrypted_username, encrypted_password, "
+    "encrypted_url, encrypted_notes, created_at, updated_at, allow_subdomains "
+    "FROM credentials";
+
+} // namespace
+
+Credential CredentialRepository::rowToCredential(sqlite3_stmt* stmt, const QByteArray& key) const {
     Credential c;
     c.id = sqlite3_column_int64(stmt, 0);
-    const auto* lPtr = reinterpret_cast<const char*>(sqlite3_column_blob(stmt, 1));
-    const auto* uPtr = reinterpret_cast<const char*>(sqlite3_column_blob(stmt, 2));
-    const auto* pPtr = reinterpret_cast<const char*>(sqlite3_column_blob(stmt, 3));
-    const auto* urlPtr = reinterpret_cast<const char*>(sqlite3_column_blob(stmt, 4));
-    const auto* nPtr = reinterpret_cast<const char*>(sqlite3_column_blob(stmt, 5));
-    c.label = decryptCredField(QByteArray(lPtr, sqlite3_column_bytes(stmt, 1)), c.id, "label", key);
-    c.username = decryptCredField(QByteArray(uPtr, sqlite3_column_bytes(stmt, 2)), c.id, "username", key);
-    c.password = decryptCredField(QByteArray(pPtr, sqlite3_column_bytes(stmt, 3)), c.id, "password", key);
-    c.url = decryptCredField(QByteArray(urlPtr, sqlite3_column_bytes(stmt, 4)), c.id, "url", key);
-    c.notes = decryptCredField(QByteArray(nPtr, sqlite3_column_bytes(stmt, 5)), c.id, "notes", key);
+    c.allowSubdomains = readAllowSubdomains(stmt, 8);
+    c.integrityError = false;
+
+    static const char* kFields[] = {"label", "username", "password", "url", "notes"};
+    QString* targets[] = {&c.label, &c.username, &c.password, &c.url, &c.notes};
+
+    for (int i = 0; i < 5; ++i) {
+        const auto* ptr = reinterpret_cast<const char*>(sqlite3_column_blob(stmt, 1 + i));
+        const QByteArray blob(ptr, sqlite3_column_bytes(stmt, 1 + i));
+        const DecryptResult<QString> dec = decryptField(blob, c.id, kFields[i], key);
+        if (dec.status == DecryptStatus::IntegrityError) {
+            c.integrityError = true;
+            return c;
+        }
+        *targets[i] = dec.value;
+    }
+
     c.createdAt = TimeUtils::fromUnix(sqlite3_column_int64(stmt, 6));
     c.updatedAt = TimeUtils::fromUnix(sqlite3_column_int64(stmt, 7));
     return c;
 }
 
-} // namespace
+CredentialSummary CredentialRepository::rowToSummary(sqlite3_stmt* stmt, const QByteArray& key) const {
+    CredentialSummary summary;
+    summary.id = sqlite3_column_int64(stmt, 0);
+    summary.allowSubdomains = readAllowSubdomains(stmt, 8);
 
-QVector<Credential> CredentialRepository::listCredentials(const QByteArray& key) const {
-    QVector<Credential> creds;
+    static const char* kFields[] = {"label", "username", "url"};
+    QString* targets[] = {&summary.label, &summary.username, &summary.url};
+    for (int i = 0; i < 3; ++i) {
+        const auto* ptr = reinterpret_cast<const char*>(sqlite3_column_blob(stmt, 1 + i));
+        const QByteArray blob(ptr, sqlite3_column_bytes(stmt, 1 + i));
+        const DecryptResult<QString> dec = decryptField(blob, summary.id, kFields[i], key);
+        if (dec.status == DecryptStatus::IntegrityError) {
+            summary.label = QStringLiteral("(integrity error)");
+            summary.username.clear();
+            summary.url.clear();
+            return summary;
+        }
+        *targets[i] = dec.value;
+    }
+
+    summary.createdAt = TimeUtils::fromUnix(sqlite3_column_int64(stmt, 6));
+    summary.updatedAt = TimeUtils::fromUnix(sqlite3_column_int64(stmt, 7));
+    return summary;
+}
+
+QVector<CredentialSummary> CredentialRepository::listCredentialSummaries(const QByteArray& key) const {
+    QVector<CredentialSummary> creds;
     sqlite3_stmt* stmt = nullptr;
-    const char* sql =
-        "SELECT id, encrypted_label, encrypted_username, encrypted_password, "
-        "encrypted_url, encrypted_notes, created_at, updated_at "
-        "FROM credentials ORDER BY updated_at DESC;";
+    const QByteArray sql = QByteArray(kSelectColumns) + " ORDER BY updated_at DESC;";
 
-    if (sqlite3_prepare_v2(m_db.handle(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    if (sqlite3_prepare_v2(m_db.handle(), sql.constData(), -1, &stmt, nullptr) != SQLITE_OK) {
         return creds;
     }
 
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
-        creds.append(rowToCredential(stmt, key));
+    int rc = SQLITE_OK;
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+        creds.append(rowToSummary(stmt, key));
     }
     sqlite3_finalize(stmt);
+    if (rc != SQLITE_DONE) {
+        creds.clear();
+    }
+    return creds;
+}
+
+QVector<Credential> CredentialRepository::listCredentials(const QByteArray& key) const {
+    QVector<Credential> creds;
+    for (const CredentialSummary& summary : listCredentialSummaries(key)) {
+        if (auto cred = getCredential(summary.id, key)) {
+            creds.append(*cred);
+        }
+    }
     return creds;
 }
 
@@ -101,12 +155,9 @@ std::optional<Credential> CredentialRepository::getCredential(
     }
 
     sqlite3_stmt* stmt = nullptr;
-    const char* sql =
-        "SELECT id, encrypted_label, encrypted_username, encrypted_password, "
-        "encrypted_url, encrypted_notes, created_at, updated_at "
-        "FROM credentials WHERE id = ?;";
+    const QByteArray sql = QByteArray(kSelectColumns) + " WHERE id = ?;";
 
-    if (sqlite3_prepare_v2(m_db.handle(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    if (sqlite3_prepare_v2(m_db.handle(), sql.constData(), -1, &stmt, nullptr) != SQLITE_OK) {
         return std::nullopt;
     }
     sqlite3_bind_int64(stmt, 1, id);
@@ -122,12 +173,17 @@ std::optional<Credential> CredentialRepository::getCredential(
 qint64 CredentialRepository::createCredential(const Credential& cred, const QByteArray& key) {
     const qint64 now = TimeUtils::toUnix(QDateTime::currentDateTimeUtc());
 
+    DbTransaction tx(m_db);
+    if (!tx.isActive()) {
+        return 0;
+    }
+
     sqlite3_stmt* stmt = nullptr;
     const char* sql =
         "INSERT INTO credentials "
         "(encrypted_label, encrypted_username, encrypted_password, encrypted_url, "
-        "encrypted_notes, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?);";
+        "encrypted_notes, created_at, updated_at, allow_subdomains) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?);";
 
     if (sqlite3_prepare_v2(m_db.handle(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
         return 0;
@@ -152,8 +208,9 @@ qint64 CredentialRepository::createCredential(const Credential& cred, const QByt
     sqlite3_bind_blob(stmt, 5, placeholderNotes.constData(), placeholderNotes.size(), SQLITE_TRANSIENT);
     sqlite3_bind_int64(stmt, 6, now);
     sqlite3_bind_int64(stmt, 7, now);
+    sqlite3_bind_int(stmt, 8, cred.allowSubdomains ? 1 : 0);
 
-    if (sqlite3_step(stmt) != SQLITE_DONE) {
+    if (!SqliteUtils::stepDone(stmt)) {
         sqlite3_finalize(stmt);
         return 0;
     }
@@ -167,7 +224,10 @@ qint64 CredentialRepository::createCredential(const Credential& cred, const QByt
     Credential updated = cred;
     updated.id = newId;
     if (!updateCredential(updated, key)) {
-        deleteCredential(newId);
+        return 0;
+    }
+
+    if (!tx.commit()) {
         return 0;
     }
     return newId;
@@ -193,8 +253,8 @@ bool CredentialRepository::updateCredential(const Credential& cred, const QByteA
     sqlite3_stmt* stmt = nullptr;
     const char* sql =
         "UPDATE credentials SET encrypted_label = ?, encrypted_username = ?, "
-        "encrypted_password = ?, encrypted_url = ?, encrypted_notes = ?, updated_at = ? "
-        "WHERE id = ?;";
+        "encrypted_password = ?, encrypted_url = ?, encrypted_notes = ?, "
+        "updated_at = ?, allow_subdomains = ? WHERE id = ?;";
 
     if (sqlite3_prepare_v2(m_db.handle(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
         return false;
@@ -206,11 +266,15 @@ bool CredentialRepository::updateCredential(const Credential& cred, const QByteA
     sqlite3_bind_blob(stmt, 4, encUrl.constData(), encUrl.size(), SQLITE_TRANSIENT);
     sqlite3_bind_blob(stmt, 5, encNotes.constData(), encNotes.size(), SQLITE_TRANSIENT);
     sqlite3_bind_int64(stmt, 6, now);
-    sqlite3_bind_int64(stmt, 7, cred.id);
+    sqlite3_bind_int(stmt, 7, cred.allowSubdomains ? 1 : 0);
+    sqlite3_bind_int64(stmt, 8, cred.id);
 
-    const bool ok = sqlite3_step(stmt) == SQLITE_DONE;
+    if (!SqliteUtils::stepDone(stmt)) {
+        sqlite3_finalize(stmt);
+        return false;
+    }
     sqlite3_finalize(stmt);
-    return ok;
+    return SqliteUtils::expectChanges(m_db.handle(), 1);
 }
 
 bool CredentialRepository::deleteCredential(qint64 id) {
@@ -223,26 +287,40 @@ bool CredentialRepository::deleteCredential(qint64 id) {
         return false;
     }
     sqlite3_bind_int64(stmt, 1, id);
-    const bool ok = sqlite3_step(stmt) == SQLITE_DONE;
+    if (!SqliteUtils::stepDone(stmt)) {
+        sqlite3_finalize(stmt);
+        return false;
+    }
     sqlite3_finalize(stmt);
-    return ok;
+    return SqliteUtils::expectChanges(m_db.handle(), 1);
+}
+
+QVector<CredentialSummary> CredentialRepository::searchCredentialSummaries(
+    const QString& query,
+    const QByteArray& key) const {
+    const QString q = query.trimmed().toLower();
+    if (q.isEmpty()) {
+        return listCredentialSummaries(key);
+    }
+
+    QVector<CredentialSummary> matches;
+    for (const CredentialSummary& c : listCredentialSummaries(key)) {
+        if (c.label.toLower().contains(q)
+            || c.username.toLower().contains(q)
+            || c.url.toLower().contains(q)) {
+            matches.append(c);
+        }
+    }
+    return matches;
 }
 
 QVector<Credential> CredentialRepository::searchCredentials(
     const QString& query,
     const QByteArray& key) const {
-    const QString q = query.trimmed().toLower();
-    if (q.isEmpty()) {
-        return listCredentials(key);
-    }
-
     QVector<Credential> matches;
-    for (const Credential& c : listCredentials(key)) {
-        if (c.label.toLower().contains(q)
-            || c.username.toLower().contains(q)
-            || c.url.toLower().contains(q)
-            || c.notes.toLower().contains(q)) {
-            matches.append(c);
+    for (const CredentialSummary& summary : searchCredentialSummaries(query, key)) {
+        if (auto cred = getCredential(summary.id, key)) {
+            matches.append(*cred);
         }
     }
     return matches;

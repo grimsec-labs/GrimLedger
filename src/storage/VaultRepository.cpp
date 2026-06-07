@@ -2,6 +2,7 @@
 #include "security/PasswordManager.h"
 #include "storage/DbTransaction.h"
 #include "utils/SecurityLimits.h"
+#include "utils/SqliteUtils.h"
 #include "utils/TimeUtils.h"
 
 #include <QDateTime>
@@ -30,6 +31,18 @@ std::optional<QByteArray> readBounded(QIODevice& device, qint64 maxBytes) {
         return std::nullopt;
     }
     return device.readAll();
+}
+
+bool tableExists(sqlite3* db, const char* name) {
+    sqlite3_stmt* stmt = nullptr;
+    const char* sql = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1;";
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        return false;
+    }
+    sqlite3_bind_text(stmt, 1, name, -1, SQLITE_TRANSIENT);
+    const bool exists = sqlite3_step(stmt) == SQLITE_ROW;
+    sqlite3_finalize(stmt);
+    return exists;
 }
 
 bool validateVaultMetadataRow(sqlite3* db, QString* errorOut) {
@@ -417,9 +430,18 @@ bool VaultRepository::migrateDomainBoundCrypto(const QByteArray& key) {
 
     struct NoteRow { qint64 id; QByteArray title; QByteArray body; };
     struct AttachRow { QString id; qint64 noteId; QByteArray data; };
+    struct CredRow {
+        qint64 id = 0;
+        QByteArray label;
+        QByteArray username;
+        QByteArray password;
+        QByteArray url;
+        QByteArray notes;
+    };
 
     QVector<NoteRow> notes;
     QVector<AttachRow> attachments;
+    QVector<CredRow> credentials;
 
     if (!queryAllRows(
             m_db.handle(),
@@ -446,6 +468,25 @@ bool VaultRepository::migrateDomainBoundCrypto(const QByteArray& key) {
                 row.data = QByteArray(blob, sqlite3_column_bytes(attachStmt, 2));
                 attachments.append(row);
                 return true;
+            })
+        || !queryAllRows(
+            m_db.handle(),
+            "SELECT id, encrypted_label, encrypted_username, encrypted_password, "
+            "encrypted_url, encrypted_notes FROM credentials;",
+            [&](sqlite3_stmt* credStmt) {
+                CredRow row;
+                row.id = sqlite3_column_int64(credStmt, 0);
+                const auto readBlob = [&](int col) {
+                    const auto* ptr = reinterpret_cast<const char*>(sqlite3_column_blob(credStmt, col));
+                    return QByteArray(ptr, sqlite3_column_bytes(credStmt, col));
+                };
+                row.label = readBlob(1);
+                row.username = readBlob(2);
+                row.password = readBlob(3);
+                row.url = readBlob(4);
+                row.notes = readBlob(5);
+                credentials.append(row);
+                return true;
             })) {
         return false;
     }
@@ -458,6 +499,14 @@ bool VaultRepository::migrateDomainBoundCrypto(const QByteArray& key) {
     struct PreparedAttach {
         QString id;
         QByteArray data;
+    };
+    struct PreparedCred {
+        qint64 id = 0;
+        QByteArray label;
+        QByteArray username;
+        QByteArray password;
+        QByteArray url;
+        QByteArray notes;
     };
 
     QVector<PreparedNote> preparedNotes;
@@ -514,6 +563,34 @@ bool VaultRepository::migrateDomainBoundCrypto(const QByteArray& key) {
         preparedAttachments.append(out);
     }
 
+    QVector<PreparedCred> preparedCredentials;
+    for (const CredRow& row : credentials) {
+        static const char* kFields[] = {"label", "username", "password", "url", "notes"};
+        const QByteArray* blobs[] = {&row.label, &row.username, &row.password, &row.url, &row.notes};
+        PreparedCred out;
+        out.id = row.id;
+        QByteArray* outs[] = {&out.label, &out.username, &out.password, &out.url, &out.notes};
+        for (int i = 0; i < 5; ++i) {
+            auto plain = CryptoManager::decryptField(
+                *blobs[i], key, CryptoManager::credentialFieldAssociatedData(row.id, kFields[i]));
+            if (!plain) {
+                plain = CryptoManager::decryptLegacy(*blobs[i], key);
+            }
+            if (!plain) {
+                return false;
+            }
+            QByteArray p = *plain;
+            const auto enc = CryptoManager::encryptField(
+                p, key, CryptoManager::credentialFieldAssociatedData(row.id, kFields[i]));
+            CryptoManager::secureZero(p);
+            if (!enc) {
+                return false;
+            }
+            *outs[i] = *enc;
+        }
+        preparedCredentials.append(out);
+    }
+
     DbTransaction tx(m_db);
     if (!tx.isActive()) {
         return false;
@@ -528,11 +605,11 @@ bool VaultRepository::migrateDomainBoundCrypto(const QByteArray& key) {
         sqlite3_bind_blob(upd, 1, row.title.constData(), row.title.size(), SQLITE_TRANSIENT);
         sqlite3_bind_blob(upd, 2, row.body.constData(), row.body.size(), SQLITE_TRANSIENT);
         sqlite3_bind_int64(upd, 3, row.id);
-        const bool ok = sqlite3_step(upd) == SQLITE_DONE;
-        sqlite3_finalize(upd);
-        if (!ok) {
+        if (!SqliteUtils::stepDone(upd) || !SqliteUtils::expectChanges(m_db.handle(), 1)) {
+            sqlite3_finalize(upd);
             return false;
         }
+        sqlite3_finalize(upd);
     }
 
     for (const PreparedAttach& row : preparedAttachments) {
@@ -543,11 +620,32 @@ bool VaultRepository::migrateDomainBoundCrypto(const QByteArray& key) {
         }
         sqlite3_bind_blob(upd, 1, row.data.constData(), row.data.size(), SQLITE_TRANSIENT);
         sqlite3_bind_text(upd, 2, row.id.toUtf8().constData(), -1, SQLITE_TRANSIENT);
-        const bool ok = sqlite3_step(upd) == SQLITE_DONE;
-        sqlite3_finalize(upd);
-        if (!ok) {
+        if (!SqliteUtils::stepDone(upd) || !SqliteUtils::expectChanges(m_db.handle(), 1)) {
+            sqlite3_finalize(upd);
             return false;
         }
+        sqlite3_finalize(upd);
+    }
+
+    for (const PreparedCred& row : preparedCredentials) {
+        sqlite3_stmt* upd = nullptr;
+        const char* sql =
+            "UPDATE credentials SET encrypted_label = ?, encrypted_username = ?, "
+            "encrypted_password = ?, encrypted_url = ?, encrypted_notes = ? WHERE id = ?;";
+        if (sqlite3_prepare_v2(m_db.handle(), sql, -1, &upd, nullptr) != SQLITE_OK) {
+            return false;
+        }
+        sqlite3_bind_blob(upd, 1, row.label.constData(), row.label.size(), SQLITE_TRANSIENT);
+        sqlite3_bind_blob(upd, 2, row.username.constData(), row.username.size(), SQLITE_TRANSIENT);
+        sqlite3_bind_blob(upd, 3, row.password.constData(), row.password.size(), SQLITE_TRANSIENT);
+        sqlite3_bind_blob(upd, 4, row.url.constData(), row.url.size(), SQLITE_TRANSIENT);
+        sqlite3_bind_blob(upd, 5, row.notes.constData(), row.notes.size(), SQLITE_TRANSIENT);
+        sqlite3_bind_int64(upd, 6, row.id);
+        if (!SqliteUtils::stepDone(upd) || !SqliteUtils::expectChanges(m_db.handle(), 1)) {
+            sqlite3_finalize(upd);
+            return false;
+        }
+        sqlite3_finalize(upd);
     }
 
     if (!writeVerificationToken(key)) {
@@ -755,7 +853,7 @@ bool VaultRepository::changeMasterPassword(
         return false;
     }
     sqlite3_bind_blob(verifyStmt, 1, verifyEnc->constData(), verifyEnc->size(), SQLITE_TRANSIENT);
-    if (sqlite3_step(verifyStmt) != SQLITE_DONE) {
+    if (!SqliteUtils::stepDone(verifyStmt) || !SqliteUtils::expectChanges(m_db.handle(), 1)) {
         sqlite3_finalize(verifyStmt);
         CryptoManager::secureZero(*newKey);
         return false;
@@ -773,12 +871,12 @@ bool VaultRepository::changeMasterPassword(
         sqlite3_bind_blob(upd, 1, row.title.constData(), row.title.size(), SQLITE_TRANSIENT);
         sqlite3_bind_blob(upd, 2, row.body.constData(), row.body.size(), SQLITE_TRANSIENT);
         sqlite3_bind_int64(upd, 3, row.id);
-        const bool ok = sqlite3_step(upd) == SQLITE_DONE;
-        sqlite3_finalize(upd);
-        if (!ok) {
+        if (!SqliteUtils::stepDone(upd) || !SqliteUtils::expectChanges(m_db.handle(), 1)) {
+            sqlite3_finalize(upd);
             CryptoManager::secureZero(*newKey);
             return false;
         }
+        sqlite3_finalize(upd);
     }
 
     for (const PreparedAttach& row : preparedAttachments) {
@@ -790,12 +888,12 @@ bool VaultRepository::changeMasterPassword(
         }
         sqlite3_bind_blob(upd, 1, row.data.constData(), row.data.size(), SQLITE_TRANSIENT);
         sqlite3_bind_text(upd, 2, row.id.toUtf8().constData(), -1, SQLITE_TRANSIENT);
-        const bool ok = sqlite3_step(upd) == SQLITE_DONE;
-        sqlite3_finalize(upd);
-        if (!ok) {
+        if (!SqliteUtils::stepDone(upd) || !SqliteUtils::expectChanges(m_db.handle(), 1)) {
+            sqlite3_finalize(upd);
             CryptoManager::secureZero(*newKey);
             return false;
         }
+        sqlite3_finalize(upd);
     }
 
     for (const PreparedCred& row : preparedCreds) {
@@ -813,12 +911,12 @@ bool VaultRepository::changeMasterPassword(
         sqlite3_bind_blob(upd, 4, row.url.constData(), row.url.size(), SQLITE_TRANSIENT);
         sqlite3_bind_blob(upd, 5, row.notes.constData(), row.notes.size(), SQLITE_TRANSIENT);
         sqlite3_bind_int64(upd, 6, row.id);
-        const bool ok = sqlite3_step(upd) == SQLITE_DONE;
-        sqlite3_finalize(upd);
-        if (!ok) {
+        if (!SqliteUtils::stepDone(upd) || !SqliteUtils::expectChanges(m_db.handle(), 1)) {
+            sqlite3_finalize(upd);
             CryptoManager::secureZero(*newKey);
             return false;
         }
+        sqlite3_finalize(upd);
     }
 
     info->salt = newSalt;
@@ -851,15 +949,37 @@ bool VaultRepository::exportEncryptedBackupV2(const QString& destPath, const QSt
         return false;
     }
 
-    QFile src(m_db.path());
-    if (!src.open(QIODevice::ReadOnly)) {
+    sqlite3* snapshotDb = nullptr;
+    if (sqlite3_open(":memory:", &snapshotDb) != SQLITE_OK) {
         return false;
     }
-    if (src.size() > SecurityLimits::kMaxDatabaseBytes) {
+    sqlite3_backup* backup = sqlite3_backup_init(snapshotDb, "main", m_db.handle(), "main");
+    if (!backup) {
+        sqlite3_close(snapshotDb);
         return false;
     }
-    const QByteArray dbData = src.readAll();
-    src.close();
+    int backupRc = SQLITE_OK;
+    do {
+        backupRc = sqlite3_backup_step(backup, 128);
+    } while (backupRc == SQLITE_OK || backupRc == SQLITE_BUSY || backupRc == SQLITE_LOCKED);
+    sqlite3_backup_finish(backup);
+    if (backupRc != SQLITE_DONE) {
+        sqlite3_close(snapshotDb);
+        return false;
+    }
+
+    sqlite3_int64 serializedSize = 0;
+    unsigned char* serialized = sqlite3_serialize(snapshotDb, "main", &serializedSize, 0);
+    sqlite3_close(snapshotDb);
+    if (!serialized || serializedSize <= 0
+        || serializedSize > SecurityLimits::kMaxDatabaseBytes) {
+        if (serialized) {
+            sqlite3_free(serialized);
+        }
+        return false;
+    }
+    QByteArray dbData(reinterpret_cast<const char*>(serialized), static_cast<int>(serializedSize));
+    sqlite3_free(serialized);
     if (dbData.isEmpty()) {
         return false;
     }
@@ -934,6 +1054,18 @@ bool VaultRepository::validateVaultFile(const QString& path, QString* errorOut) 
         if (errorOut) {
             *errorOut = QStringLiteral("Could not open database for validation.");
         }
+        return false;
+    }
+
+    const bool tablesOk = tableExists(db, "vault_metadata")
+        && tableExists(db, "app_metadata")
+        && tableExists(db, "notes")
+        && tableExists(db, "credentials");
+    if (!tablesOk) {
+        if (errorOut) {
+            *errorOut = QStringLiteral("Restored database schema is incomplete.");
+        }
+        sqlite3_close(db);
         return false;
     }
 
@@ -1243,7 +1375,20 @@ bool VaultRepository::installValidatedPlaintextVault(
 
     if (!QFile::rename(tempPath, liveVaultPath)) {
         if (QFile::exists(backupLivePath)) {
-            QFile::rename(backupLivePath, liveVaultPath);
+            if (!QFile::remove(liveVaultPath)) {
+                QFile::remove(tempPath);
+                if (errorOut) {
+                    *errorOut = QStringLiteral("Restore install failed and rollback was blocked.");
+                }
+                return false;
+            }
+            if (!QFile::rename(backupLivePath, liveVaultPath)) {
+                QFile::remove(tempPath);
+                if (errorOut) {
+                    *errorOut = QStringLiteral("Restore install failed and rollback failed.");
+                }
+                return false;
+            }
         }
         QFile::remove(tempPath);
         if (errorOut) {
@@ -1259,8 +1404,11 @@ bool VaultRepository::installValidatedPlaintextVault(
             sqlite3_close(installedDb);
         }
         QFile::remove(liveVaultPath);
-        if (QFile::exists(backupLivePath)) {
-            QFile::rename(backupLivePath, liveVaultPath);
+        if (QFile::exists(backupLivePath) && !QFile::rename(backupLivePath, liveVaultPath)) {
+            if (errorOut) {
+                *errorOut = QStringLiteral("Installed vault failed validation and rollback failed.");
+            }
+            return false;
         }
         if (errorOut && errorOut->isEmpty()) {
             *errorOut = QStringLiteral("Installed vault failed validation and was rolled back.");
@@ -1268,6 +1416,11 @@ bool VaultRepository::installValidatedPlaintextVault(
         return false;
     }
     sqlite3_close(installedDb);
-    QFile::remove(backupLivePath);
+    if (QFile::exists(backupLivePath) && !QFile::remove(backupLivePath)) {
+        if (errorOut) {
+            *errorOut = QStringLiteral("Restore succeeded but old vault backup could not be removed.");
+        }
+        return false;
+    }
     return true;
 }

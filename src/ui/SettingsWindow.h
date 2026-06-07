@@ -22,12 +22,15 @@ public:
     int autoLockMinutes() const;
     bool selfDestructEnabled() const;
     void setSelfDestructEnabled(bool enabled);
+    bool browserBridgeEnabled() const;
+    void setBrowserBridgeEnabled(bool enabled);
 
 signals:
     void accentChanged(const QString& hex);
     void lineNumbersChanged(bool enabled);
     void wordWrapChanged(bool enabled);
     void autoLockChanged(bool enabled, int minutes);
+    void browserBridgeChanged(bool enabled);
     void changePasswordRequested(const QString& current, const QString& newPass);
     void backupVaultRequested(const QString& path);
     void restoreVaultRequested(const QString& path);
@@ -48,4 +51,5 @@ private:
     QLineEdit* m_currentPassEdit = nullptr;
     QLineEdit* m_newPassEdit = nullptr;
     QCheckBox* m_selfDestructCheck = nullptr;
+    QCheckBox* m_browserBridgeCheck = nullptr;
 };

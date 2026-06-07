@@ -2,7 +2,7 @@
 
 #include <QWidget>
 #include <QVector>
-#include "models/Credential.h"
+#include "models/CredentialSummary.h"
 
 class QLineEdit;
 class QListWidget;
@@ -14,7 +14,7 @@ class CredentialList : public QWidget {
 public:
     explicit CredentialList(QWidget* parent = nullptr);
 
-    void setCredentials(const QVector<Credential>& creds);
+    void setCredentials(const QVector<CredentialSummary>& creds);
     void selectCredential(qint64 id);
     void clearSelection();
     qint64 currentCredentialId() const;

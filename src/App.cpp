@@ -82,6 +82,7 @@ void App::onUnlockRequested(const QString& password) {
         m_login->clearPassword();
     }
     showMain();
+    m_main->onVaultUnlocked();
 }
 
 void App::onCreateVaultRequested(const QString& password) {
@@ -125,6 +126,7 @@ void App::onCreateVaultRequested(const QString& password) {
         m_login->clearPassword();
     }
     showMain();
+    m_main->onVaultUnlocked();
 }
 
 void App::onVaultLocked() {
@@ -197,6 +199,13 @@ void App::destroyVaultAfterFailedAttempts() {
             m_login,
             QStringLiteral("Vault Destroyed"),
             QStringLiteral("The vault file was removed, but a new database could not be created."));
+        if (m_login) {
+            m_login->setVaultExists(false);
+            m_login->clearPassword();
+            m_login->show();
+            m_login->raise();
+            m_login->activateWindow();
+        }
         return;
     }
 
