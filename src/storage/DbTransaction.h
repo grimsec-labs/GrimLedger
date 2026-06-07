@@ -11,6 +11,7 @@ public:
     DbTransaction& operator=(const DbTransaction&) = delete;
 
     bool commit();
+    bool isActive() const { return m_active; }
 
 private:
     Database& m_db;

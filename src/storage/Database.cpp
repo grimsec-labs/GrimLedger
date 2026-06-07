@@ -120,6 +120,19 @@ bool Database::initializeSchema() {
         CREATE INDEX IF NOT EXISTS idx_notes_favorite ON notes(is_favorite);
         CREATE INDEX IF NOT EXISTS idx_tags_name ON tags(name);
         CREATE INDEX IF NOT EXISTS idx_attachments_note ON note_attachments(note_id);
+
+        CREATE TABLE IF NOT EXISTS credentials (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            encrypted_label BLOB NOT NULL,
+            encrypted_username BLOB NOT NULL,
+            encrypted_password BLOB NOT NULL,
+            encrypted_url BLOB NOT NULL,
+            encrypted_notes BLOB NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_credentials_updated ON credentials(updated_at DESC);
     )SQL";
 
     return execute(QString::fromUtf8(schema));

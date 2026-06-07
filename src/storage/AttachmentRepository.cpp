@@ -109,7 +109,8 @@ std::optional<QByteArray> AttachmentRepository::loadAttachment(
 
 QHash<QString, QString> AttachmentRepository::duplicateAttachments(
     qint64 fromNoteId,
-    qint64 toNoteId) const {
+    qint64 toNoteId,
+    const QByteArray& key) const {
     QHash<QString, QString> idMap;
     if (fromNoteId <= 0 || toNoteId <= 0) {
         return idMap;
@@ -153,14 +154,31 @@ QHash<QString, QString> AttachmentRepository::duplicateAttachments(
 
     for (const Row& row : rows) {
         const QString newId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+
+        auto plain = CryptoManager::decryptField(
+            row.data, key, CryptoManager::attachmentAssociatedData(row.id));
+        if (!plain) {
+            plain = CryptoManager::decryptLegacy(row.data, key);
+        }
+        if (!plain) {
+            return idMap;
+        }
+
+        const auto encrypted = CryptoManager::encryptField(
+            *plain, key, CryptoManager::attachmentAssociatedData(newId));
+        CryptoManager::secureZero(*plain);
+        if (!encrypted) {
+            return idMap;
+        }
+
         sqlite3_stmt* ins = nullptr;
         if (sqlite3_prepare_v2(m_db.handle(), insSql, -1, &ins, nullptr) != SQLITE_OK) {
-            continue;
+            return idMap;
         }
 
         sqlite3_bind_text(ins, 1, newId.toUtf8().constData(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_int64(ins, 2, toNoteId);
-        sqlite3_bind_blob(ins, 3, row.data.constData(), row.data.size(), SQLITE_TRANSIENT);
+        sqlite3_bind_blob(ins, 3, encrypted->constData(), encrypted->size(), SQLITE_TRANSIENT);
         sqlite3_bind_text(ins, 4, row.mime.toUtf8().constData(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(ins, 5, row.name.toUtf8().constData(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_int64(ins, 6, row.createdAt);

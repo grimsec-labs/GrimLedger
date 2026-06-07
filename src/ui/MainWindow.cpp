@@ -3,7 +3,12 @@
 #include "ui/NoteList.h"
 #include "ui/NoteEditor.h"
 #include "ui/MarkdownPreview.h"
+#include "ui/CredentialList.h"
+#include "ui/CredentialEditor.h"
 #include "ui/SettingsWindow.h"
+#include "storage/CredentialRepository.h"
+#include "utils/PasswordGenerator.h"
+#include "utils/ClipboardUtils.h"
 #include "ui/CustomTitleBar.h"
 #include "ui/FramelessResize.h"
 #include "ui/FolderPickerDialog.h"
@@ -19,11 +24,13 @@
 #include "utils/DialogUtils.h"
 #include "ui/GrimInputDialog.h"
 #include "utils/SecurityLimits.h"
+#include "utils/PathSafety.h"
 #include "ui/GrimFileDialog.h"
 #include "security/CryptoManager.h"
 #include "security/VaultSession.h"
 
 #include <QSplitter>
+#include <QStackedWidget>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QComboBox>
@@ -39,6 +46,8 @@
 #include <QApplication>
 #include <QDialog>
 
+#include <algorithm>
+
 MainWindow::MainWindow(Database& db, VaultSession& session, QWidget* parent)
     : QMainWindow(parent)
     , m_db(db)
@@ -46,6 +55,7 @@ MainWindow::MainWindow(Database& db, VaultSession& session, QWidget* parent)
     , m_accent(Theme::savedAccent())
     , m_attachments(db) {
     m_notes = std::make_unique<NoteRepository>(m_db);
+    m_credentials = std::make_unique<CredentialRepository>(m_db);
     m_vault = std::make_unique<VaultRepository>(m_db);
     m_notes->ensureDefaultFolder();
     buildUi();
@@ -130,7 +140,7 @@ void MainWindow::buildUi() {
             return;
         }
 
-        const auto idMap = m_attachments.duplicateAttachments(id, newId);
+        const auto idMap = m_attachments.duplicateAttachments(id, newId, m_session.key());
         if (!idMap.isEmpty()) {
             Note updated = *m_notes->getNote(newId, m_session.key());
             updated.body = m_attachments.remapAttachmentUrls(updated.body, idMap);
@@ -147,7 +157,9 @@ void MainWindow::buildUi() {
     auto* mainLayout = new QVBoxLayout(m_mainPanel);
     mainLayout->setContentsMargins(8, 8, 8, 8);
 
-    auto* viewRow = new QHBoxLayout();
+    m_viewModeRow = new QWidget(this);
+    auto* viewRow = new QHBoxLayout(m_viewModeRow);
+    viewRow->setContentsMargins(0, 0, 0, 0);
     viewRow->addStretch();
     m_viewModeCombo = new QComboBox(this);
     m_viewModeCombo->addItem(QStringLiteral("Split View"));
@@ -159,12 +171,16 @@ void MainWindow::buildUi() {
     viewRow->addWidget(m_viewModeCombo);
 
     m_editorSplitter = new QSplitter(Qt::Horizontal, this);
+    m_editorSplitter->setObjectName(QStringLiteral("EditorPreviewSplitter"));
+    m_editorSplitter->setHandleWidth(8);
+    m_editorSplitter->setChildrenCollapsible(false);
     m_editor = new NoteEditor(this);
     m_preview = new MarkdownPreview(this);
     m_editorSplitter->addWidget(m_editor);
     m_editorSplitter->addWidget(m_preview);
     m_editorSplitter->setStretchFactor(0, 1);
     m_editorSplitter->setStretchFactor(1, 1);
+    m_editorSplitter->setSizes({500, 500});
 
     connect(m_editor, &NoteEditor::contentChanged, this, &MainWindow::onEditorChanged);
     connect(m_editor, &NoteEditor::saveRequested, this, &MainWindow::onSaveNote);
@@ -178,7 +194,42 @@ void MainWindow::buildUi() {
     m_emptyEditorLabel->setAlignment(Qt::AlignCenter);
     m_emptyEditorLabel->setWordWrap(true);
 
-    mainLayout->addLayout(viewRow);
+    m_credEditor = new CredentialEditor(this);
+    m_credPanel = new QWidget(this);
+    auto* credLayout = new QVBoxLayout(m_credPanel);
+    credLayout->setContentsMargins(0, 0, 0, 0);
+    credLayout->addWidget(m_credEditor);
+
+    connect(m_credEditor, &CredentialEditor::contentChanged, this, [this]() {
+        m_session.resetActivityTimer();
+    });
+    connect(m_credEditor, &CredentialEditor::saveRequested, this, &MainWindow::onSaveCredential);
+    connect(m_credEditor, &CredentialEditor::deleteRequested, this, [this]() {
+        if (m_currentCredentialId > 0) {
+            onDeleteCredential(m_currentCredentialId);
+        }
+    });
+    connect(m_credEditor, &CredentialEditor::generatePasswordRequested,
+            this, &MainWindow::onGenerateCredentialPassword);
+    connect(m_credEditor, &CredentialEditor::copyPasswordRequested,
+            this, &MainWindow::onCopyCredentialPassword);
+    connect(m_credEditor, &CredentialEditor::copyUsernameRequested,
+            this, &MainWindow::onCopyCredentialUsername);
+
+    m_credList = new CredentialList(this);
+    connect(m_credList, &CredentialList::credentialSelected, this, &MainWindow::onCredentialSelected);
+    connect(m_credList, &CredentialList::newCredentialRequested, this, &MainWindow::onNewCredential);
+    connect(m_credList, &CredentialList::searchChanged, this, &MainWindow::onCredentialSearchChanged);
+
+    m_listStack = new QStackedWidget(this);
+    m_listStack->addWidget(m_noteList);
+    m_listStack->addWidget(m_credList);
+
+    m_contentStack = new QStackedWidget(this);
+    m_contentStack->addWidget(m_mainPanel);
+    m_contentStack->addWidget(m_credPanel);
+
+    mainLayout->addWidget(m_viewModeRow);
     mainLayout->addWidget(m_editorSplitter, 1);
     mainLayout->addWidget(m_emptyEditorLabel, 1);
     m_emptyEditorLabel->hide();
@@ -209,14 +260,14 @@ void MainWindow::buildUi() {
 
     auto* rightStack = new QVBoxLayout();
     rightStack->setContentsMargins(0, 0, 0, 0);
-    rightStack->addWidget(m_mainPanel);
+    rightStack->addWidget(m_contentStack);
     rightStack->addWidget(m_settingsPanel);
 
     auto* rightWidget = new QWidget(this);
     rightWidget->setLayout(rightStack);
 
     rootLayout->addWidget(m_sidebar);
-    rootLayout->addWidget(m_noteList);
+    rootLayout->addWidget(m_listStack);
     rootLayout->addWidget(rightWidget, 1);
 
     shellLayout->addWidget(m_titleBar);
@@ -378,9 +429,201 @@ void MainWindow::onSectionSelected(SidebarSection section, qint64 id) {
     }
 
     hideSettings();
+
+    if (section == SidebarSection::Passwords) {
+        saveCurrentNote(false, false, false);
+        m_section = section;
+        showPasswordsMode();
+        loadCredentials();
+        return;
+    }
+
+    saveCurrentCredential(false);
+    showNotesMode();
     m_section = section;
     m_filterId = id;
     loadNotes();
+}
+
+void MainWindow::showNotesMode() {
+    m_listStack->setCurrentWidget(m_noteList);
+    m_contentStack->setCurrentWidget(m_mainPanel);
+    m_viewModeRow->show();
+}
+
+void MainWindow::showPasswordsMode() {
+    m_listStack->setCurrentWidget(m_credList);
+    m_contentStack->setCurrentWidget(m_credPanel);
+    m_viewModeRow->hide();
+}
+
+void MainWindow::loadCredentials() {
+    const QByteArray& key = m_session.key();
+    m_cachedCredentials = m_credSearchQuery.trimmed().isEmpty()
+        ? m_credentials->listCredentials(key)
+        : m_credentials->searchCredentials(m_credSearchQuery, key);
+    m_credList->setCredentials(m_cachedCredentials);
+
+    if (m_currentCredentialId > 0) {
+        const bool stillExists = std::any_of(
+            m_cachedCredentials.cbegin(),
+            m_cachedCredentials.cend(),
+            [this](const Credential& c) { return c.id == m_currentCredentialId; });
+        if (stillExists) {
+            m_credList->selectCredential(m_currentCredentialId);
+            return;
+        }
+    }
+
+    if (m_cachedCredentials.isEmpty()) {
+        m_currentCredentialId = 0;
+        m_credEditor->clearFields();
+        return;
+    }
+
+    loadCredential(m_cachedCredentials.first().id);
+    m_credList->selectCredential(m_currentCredentialId);
+}
+
+void MainWindow::loadCredential(qint64 id) {
+    const auto cred = m_credentials->getCredential(id, m_session.key());
+    if (!cred) {
+        return;
+    }
+
+    m_currentCredentialId = id;
+    m_credEditor->setLabel(cred->label);
+    m_credEditor->setUsername(cred->username);
+    m_credEditor->setPassword(cred->password);
+    m_credEditor->setUrl(cred->url);
+    m_credEditor->setNotes(cred->notes);
+    m_credEditor->setSavedState(true, cred->updatedAt);
+    m_session.resetActivityTimer();
+}
+
+bool MainWindow::saveCurrentCredential(bool showErrorDialog) {
+    if (m_section != SidebarSection::Passwords || m_currentCredentialId <= 0) {
+        return true;
+    }
+
+    Credential c;
+    c.id = m_currentCredentialId;
+    c.label = m_credEditor->label();
+    c.username = m_credEditor->username();
+    c.password = m_credEditor->password();
+    c.url = m_credEditor->url();
+    c.notes = m_credEditor->notes();
+
+    if (c.label.isEmpty()) {
+        if (showErrorDialog) {
+            DialogUtils::warning(
+                this,
+                QStringLiteral("Vault Key"),
+                QStringLiteral("Enter a label for this credential."));
+        }
+        return false;
+    }
+
+    if (!m_credentials->updateCredential(c, m_session.key())) {
+        if (showErrorDialog) {
+            DialogUtils::warning(
+                this,
+                QStringLiteral("Vault Key"),
+                QStringLiteral("Could not save credential."));
+        }
+        return false;
+    }
+
+    const auto saved = m_credentials->getCredential(c.id, m_session.key());
+    if (saved) {
+        m_credEditor->setSavedState(true, saved->updatedAt);
+    }
+    loadCredentials();
+    return true;
+}
+
+void MainWindow::onCredentialSelected(qint64 id) {
+    if (m_currentCredentialId > 0 && m_currentCredentialId != id) {
+        saveCurrentCredential(false);
+    }
+    loadCredential(id);
+}
+
+void MainWindow::onNewCredential() {
+    Credential c;
+    c.label = QStringLiteral("New Vault Key");
+    c.username = QString();
+    c.password = PasswordGenerator::generate();
+    c.url = QString();
+    c.notes = QString();
+
+    const qint64 id = m_credentials->createCredential(c, m_session.key());
+    if (id <= 0) {
+        DialogUtils::warning(
+            this,
+            QStringLiteral("Vault Key"),
+            QStringLiteral("Could not create credential."));
+        return;
+    }
+
+    m_currentCredentialId = id;
+    loadCredentials();
+    loadCredential(id);
+    m_credList->selectCredential(id);
+}
+
+void MainWindow::onSaveCredential() {
+    saveCurrentCredential(true);
+}
+
+void MainWindow::onDeleteCredential(qint64 id) {
+    if (!DialogUtils::question(
+            this,
+            QStringLiteral("Delete Vault Key"),
+            QStringLiteral("Delete this credential permanently?"))) {
+        return;
+    }
+
+    m_credentials->deleteCredential(id);
+    if (m_currentCredentialId == id) {
+        m_currentCredentialId = 0;
+        m_credEditor->clearFields();
+    }
+    loadCredentials();
+}
+
+void MainWindow::onCredentialSearchChanged(const QString& query) {
+    m_credSearchQuery = query;
+    loadCredentials();
+}
+
+void MainWindow::onGenerateCredentialPassword() {
+    m_credEditor->setPassword(PasswordGenerator::generate());
+    m_credEditor->setSavedState(false);
+}
+
+void MainWindow::onCopyCredentialPassword() {
+    const QString pass = m_credEditor->password();
+    if (pass.isEmpty()) {
+        return;
+    }
+    ClipboardUtils::copyTextWithAutoClear(pass);
+    DialogUtils::information(
+        this,
+        QStringLiteral("Copied"),
+        QStringLiteral("Password copied. Clipboard clears in 20 seconds."));
+}
+
+void MainWindow::onCopyCredentialUsername() {
+    const QString user = m_credEditor->username();
+    if (user.isEmpty()) {
+        return;
+    }
+    ClipboardUtils::copyTextWithAutoClear(user);
+    DialogUtils::information(
+        this,
+        QStringLiteral("Copied"),
+        QStringLiteral("Username copied. Clipboard clears in 20 seconds."));
 }
 
 void MainWindow::onNoteSelected(qint64 id) {
@@ -546,6 +789,7 @@ void MainWindow::onLockVault() {
     }
 
     m_lockingVault = true;
+    saveCurrentCredential(false);
     saveCurrentNote(false, false, false);
     m_session.lock();
     m_lockingVault = false;
@@ -595,13 +839,19 @@ void MainWindow::refreshSidebar() {
 }
 
 void MainWindow::showSettings() {
-    m_mainPanel->hide();
+    saveCurrentCredential(false);
+    m_contentStack->hide();
     m_settingsPanel->show();
 }
 
 void MainWindow::hideSettings() {
     m_settingsPanel->hide();
-    m_mainPanel->show();
+    m_contentStack->show();
+    if (m_section == SidebarSection::Passwords) {
+        showPasswordsMode();
+    } else {
+        showNotesMode();
+    }
 }
 
 void MainWindow::onAccentChanged(const QString& hex) {
@@ -672,12 +922,22 @@ void MainWindow::onBackupVault(const QString& path) {
         return;
     }
 
+    if (PathSafety::isBlockedBackupTarget(path, m_db.path())) {
+        DialogUtils::warning(
+            this,
+            QStringLiteral("Backup"),
+            QStringLiteral("Cannot save a backup to the live vault file or restore working files."));
+        return;
+    }
+
     if (m_vault->exportEncryptedBackupV2(path, password)) {
         DialogUtils::information(this, QStringLiteral("Backup"),
             QStringLiteral("Encrypted backup saved (GRIMBKUP2)."));
     } else {
-        DialogUtils::warning(this, QStringLiteral("Backup"),
-            QStringLiteral("Backup failed."));
+        DialogUtils::warning(
+            this,
+            QStringLiteral("Backup"),
+            QStringLiteral("Backup failed. Check the password and destination path."));
     }
 }
 
@@ -750,10 +1010,16 @@ void MainWindow::onRestoreVault(const QString& path) {
         return;
     }
 
-    loadNotes();
-    refreshSidebar();
-    DialogUtils::information(this, QStringLiteral("Restore"),
-        QStringLiteral("Vault restored from backup."));
+    closeNoteEditor();
+    m_cachedNotes.clear();
+    m_preview->setMarkdown(QString(), imageResolver());
+    m_session.lock();
+    DialogUtils::information(
+        this,
+        QStringLiteral("Restore"),
+        QStringLiteral(
+            "Vault restored from backup. Unlock with the password for this backup before editing."));
+    emit vaultLocked();
 }
 
 void MainWindow::onImportMarkdown() {
@@ -856,9 +1122,10 @@ void MainWindow::onInsertImage() {
 
     const QString path = GrimFileDialog::getOpenFileName(
         this,
-        QStringLiteral("Insert Image"),
+        QStringLiteral("insert image"),
         QString(),
-        QStringLiteral("Images (*.png *.jpg *.jpeg *.bmp *.webp *.gif)"));
+        QStringLiteral("Images (*.png *.jpg *.jpeg *.bmp *.webp *.gif)"),
+        QStringLiteral("metadata purged · re-sealed as PNG · encrypted in vault"));
     if (path.isEmpty()) {
         return;
     }

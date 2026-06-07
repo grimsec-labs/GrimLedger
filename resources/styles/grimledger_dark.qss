@@ -465,7 +465,20 @@ QStatusBar QLabel {
 
 QSplitter::handle {
     background: #1e1e24;
-    width: 2px;
+}
+
+#EditorPreviewSplitter::handle:horizontal {
+    width: 8px;
+    background: #141418;
+    border-left: 1px solid #2a2a30;
+    border-right: 1px solid #2a2a30;
+    margin: 4px 0;
+}
+
+#EditorPreviewSplitter::handle:horizontal:hover {
+    background: #221a14;
+    border-left: 1px solid @@ACCENT@@;
+    border-right: 1px solid @@ACCENT@@;
 }
 
 QScrollBar:vertical {

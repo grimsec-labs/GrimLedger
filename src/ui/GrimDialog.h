@@ -18,7 +18,10 @@ public:
     CustomTitleBar* titleBar() const { return m_titleBar; }
 
     // Inject a custom title bar into an existing QDialog (e.g. QFileDialog).
-    static void injectTitleBar(QDialog* dialog, const QString& windowTitle);
+    static void injectTitleBar(
+        QDialog* dialog,
+        const QString& windowTitle,
+        const QString& subtitle = QString());
 
 protected:
     bool nativeEvent(const QByteArray& eventType, void* message, qintptr* result) override;

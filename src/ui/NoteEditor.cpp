@@ -78,7 +78,8 @@ void NoteEditor::buildUi() {
         auto* btn = new QToolButton(m_toolbar);
         btn->setText(QString::fromUtf8(a.label));
         if (QString::fromUtf8(a.label) == QStringLiteral("Img")) {
-            btn->setToolTip(QStringLiteral("Insert image (metadata stripped)"));
+            btn->setToolTip(
+                QStringLiteral("Insert image — metadata purged, re-sealed as PNG, encrypted in vault"));
             connect(btn, &QToolButton::clicked, this, &NoteEditor::imageInsertRequested);
         } else {
             btn->setProperty("md_before", QString::fromUtf8(a.before));

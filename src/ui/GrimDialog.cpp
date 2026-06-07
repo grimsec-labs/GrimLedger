@@ -38,7 +38,10 @@ QWidget* GrimDialog::contentWidget() const {
     return m_content;
 }
 
-void GrimDialog::injectTitleBar(QDialog* dialog, const QString& windowTitle) {
+void GrimDialog::injectTitleBar(
+    QDialog* dialog,
+    const QString& windowTitle,
+    const QString& subtitle) {
     if (!dialog || dialog->property("grimTitleInjected").toBool()) {
         return;
     }
@@ -48,7 +51,10 @@ void GrimDialog::injectTitleBar(QDialog* dialog, const QString& windowTitle) {
 
     auto* bar = new CustomTitleBar(dialog);
     bar->setTitle(QStringLiteral("GRIMLEDGER"));
-    bar->setSubtitle(windowTitle);
+    const QString barSubtitle = subtitle.isEmpty()
+        ? windowTitle
+        : QStringLiteral("// %1 · %2").arg(windowTitle, subtitle);
+    bar->setSubtitle(barSubtitle);
     bar->setDialogMode(true);
 
     QLayout* layout = dialog->layout();

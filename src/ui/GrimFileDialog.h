@@ -11,7 +11,8 @@ public:
         QWidget* parent,
         const QString& title,
         const QString& dir = QString(),
-        const QString& filter = QString());
+        const QString& filter = QString(),
+        const QString& subtitle = QString());
 
     static QStringList getOpenFileNames(
         QWidget* parent,

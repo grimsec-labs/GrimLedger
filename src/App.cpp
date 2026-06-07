@@ -94,8 +94,15 @@ void App::onCreateVaultRequested(const QString& password) {
         }
 
         m_db->close();
-        QFile::remove(m_db->path());
-        if (!m_db->open(m_db->path())) {
+        const QString vaultPath = m_db->path();
+        if (QFile::exists(vaultPath) && !QFile::remove(vaultPath)) {
+            m_login->showError(QStringLiteral("Could not remove the existing vault file."));
+            if (!m_db->open(vaultPath)) {
+                m_login->showError(QStringLiteral("Could not reopen vault file."));
+            }
+            return;
+        }
+        if (!m_db->open(vaultPath)) {
             m_login->showError(QStringLiteral("Could not reset vault file."));
             return;
         }
@@ -159,12 +166,37 @@ void App::destroyVaultAfterFailedAttempts() {
     }
 
     m_db->close();
-    QFile::remove(m_db->path());
-    if (!m_db->open(m_db->path())) {
+    const QString vaultPath = m_db->path();
+    if (QFile::exists(vaultPath) && !QFile::remove(vaultPath)) {
+        DialogUtils::critical(
+            m_login,
+            QStringLiteral("Vault Deletion Failed"),
+            QStringLiteral(
+                "Three failed unlock attempts were detected, but the vault file could not be removed. "
+                "Your data may still be on disk."));
+        if (!m_db->open(vaultPath)) {
+            DialogUtils::critical(
+                m_login,
+                QStringLiteral("Vault Deletion Failed"),
+                QStringLiteral("The vault database could not be reopened."));
+        } else {
+            m_vault = std::make_unique<VaultRepository>(*m_db);
+        }
+        if (m_login) {
+            m_login->setVaultExists(m_vault && m_vault->vaultExists());
+            m_login->clearPassword();
+            m_login->show();
+            m_login->raise();
+            m_login->activateWindow();
+        }
+        return;
+    }
+
+    if (!m_db->open(vaultPath)) {
         DialogUtils::critical(
             m_login,
             QStringLiteral("Vault Destroyed"),
-            QStringLiteral("Three failed unlock attempts detected, but the vault file could not be removed."));
+            QStringLiteral("The vault file was removed, but a new database could not be created."));
         return;
     }
 
@@ -173,7 +205,9 @@ void App::destroyVaultAfterFailedAttempts() {
     DialogUtils::critical(
         m_login,
         QStringLiteral("Vault Destroyed"),
-        QStringLiteral("Three failed unlock attempts. The vault has been permanently deleted."));
+        QStringLiteral(
+            "Three failed unlock attempts. The vault file was deleted from disk. "
+            "This does not guarantee physical erasure."));
 
     if (m_login) {
         m_login->setVaultExists(false);

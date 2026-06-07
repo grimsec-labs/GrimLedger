@@ -6,8 +6,10 @@
 #include <QComboBox>
 #include <QLabel>
 #include <QStatusBar>
+#include <QStackedWidget>
 #include <memory>
 #include "models/Note.h"
+#include "models/Credential.h"
 #include "storage/NoteRepository.h"
 #include "storage/AttachmentRepository.h"
 #include "markdown/MarkdownRenderer.h"
@@ -17,10 +19,13 @@ class Sidebar;
 class NoteList;
 class NoteEditor;
 class MarkdownPreview;
+class CredentialList;
+class CredentialEditor;
 class SettingsWindow;
 class VaultSession;
 class Database;
 class NoteRepository;
+class CredentialRepository;
 class VaultRepository;
 class CustomTitleBar;
 
@@ -63,6 +68,15 @@ private slots:
     void onExportEncryptedArchive(const QString& path);
     void onInsertImage();
 
+    void onCredentialSelected(qint64 id);
+    void onNewCredential();
+    void onSaveCredential();
+    void onDeleteCredential(qint64 id);
+    void onCredentialSearchChanged(const QString& query);
+    void onGenerateCredentialPassword();
+    void onCopyCredentialPassword();
+    void onCopyCredentialUsername();
+
 signals:
     void vaultLocked();
 
@@ -74,6 +88,11 @@ private:
     bool saveCurrentNote(bool showFolderPicker, bool closeAfter, bool showErrorDialog = true);
     void closeNoteEditor();
     void openNoteEditor();
+    void showNotesMode();
+    void showPasswordsMode();
+    void loadCredentials();
+    void loadCredential(qint64 id);
+    bool saveCurrentCredential(bool showErrorDialog = true);
     void applyAccent(const QString& hex);
     void updateStatusBar();
     void updatePreview();
@@ -87,12 +106,18 @@ protected:
     VaultSession& m_session;
     AttachmentRepository m_attachments;
     std::unique_ptr<NoteRepository> m_notes;
+    std::unique_ptr<CredentialRepository> m_credentials;
     std::unique_ptr<VaultRepository> m_vault;
 
     Sidebar* m_sidebar = nullptr;
+    QStackedWidget* m_listStack = nullptr;
     NoteList* m_noteList = nullptr;
+    CredentialList* m_credList = nullptr;
+    QStackedWidget* m_contentStack = nullptr;
     NoteEditor* m_editor = nullptr;
     MarkdownPreview* m_preview = nullptr;
+    QWidget* m_credPanel = nullptr;
+    CredentialEditor* m_credEditor = nullptr;
     SettingsWindow* m_settings = nullptr;
     CustomTitleBar* m_titleBar = nullptr;
 
@@ -100,6 +125,7 @@ protected:
     SettingsWindow* m_settingsPanel = nullptr;
     QSplitter* m_editorSplitter = nullptr;
     QComboBox* m_viewModeCombo = nullptr;
+    QWidget* m_viewModeRow = nullptr;
     QStatusBar* m_status = nullptr;
     QLabel* m_wordLabel = nullptr;
     QLabel* m_charLabel = nullptr;
@@ -109,13 +135,16 @@ protected:
     QLabel* m_emptyEditorLabel = nullptr;
 
     QVector<Note> m_cachedNotes;
+    QVector<Credential> m_cachedCredentials;
     qint64 m_currentNoteId = 0;
+    qint64 m_currentCredentialId = 0;
     qint64 m_currentFolderId = 0;
     SidebarSection m_section = SidebarSection::AllNotes;
     qint64 m_filterId = 0;
     NoteSortField m_sortField = NoteSortField::Modified;
     bool m_sortDescending = true;
     QString m_searchQuery;
+    QString m_credSearchQuery;
     QString m_accent;
     bool m_lockingVault = false;
 };

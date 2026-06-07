@@ -26,6 +26,7 @@ void Sidebar::buildUi() {
     m_navList->addItem(QStringLiteral("All Notes"));
     m_navList->addItem(QStringLiteral("★ Favorites"));
     m_navList->addItem(QStringLiteral("◷ Recent"));
+    m_navList->addItem(QStringLiteral("⛨ Vault Keys"));
     m_navList->addItem(QStringLiteral("⚙ Settings"));
     m_navList->addItem(QStringLiteral("⛨ Lock Vault"));
     connect(m_navList, &QListWidget::currentRowChanged, this, &Sidebar::onNavItemClicked);
@@ -96,8 +97,9 @@ void Sidebar::onNavItemClicked(int row) {
     case 0: emit sectionSelected(SidebarSection::AllNotes); break;
     case 1: emit sectionSelected(SidebarSection::Favorites); break;
     case 2: emit sectionSelected(SidebarSection::Recent); break;
-    case 3: emit sectionSelected(SidebarSection::Settings); break;
-    case 4: emit lockRequested(); break;
+    case 3: emit sectionSelected(SidebarSection::Passwords); break;
+    case 4: emit sectionSelected(SidebarSection::Settings); break;
+    case 5: emit lockRequested(); break;
     default: break;
     }
 }

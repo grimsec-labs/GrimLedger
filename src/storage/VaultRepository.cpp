@@ -10,6 +10,7 @@
 #include <QFileInfo>
 #include <QSaveFile>
 #include <QtEndian>
+#include <cstring>
 #include <sqlite3.h>
 
 namespace {
@@ -145,19 +146,40 @@ bool parseBackupHeaderV2(const QByteArray& header, QByteArray& saltOut, CryptoMa
     if (header.size() != 43 || static_cast<unsigned char>(header[0]) != 1) {
         return false;
     }
-    const quint16 vaultVersion = qFromLittleEndian<quint16>(
-        *reinterpret_cast<const quint16*>(header.constData() + 1));
+    quint16 vaultVersionRaw = 0;
+    quint64 opsRaw = 0;
+    quint64 memRaw = 0;
+    quint64 plainRaw = 0;
+    std::memcpy(&vaultVersionRaw, header.constData() + 1, sizeof(vaultVersionRaw));
+    const quint16 vaultVersion = qFromLittleEndian(vaultVersionRaw);
     if (vaultVersion != kVaultVersion) {
         return false;
     }
     saltOut = header.mid(3, CryptoManager::kSaltSize);
-    paramsOut.opsLimit = qFromLittleEndian<quint64>(
-        *reinterpret_cast<const quint64*>(header.constData() + 19));
-    paramsOut.memLimit = static_cast<size_t>(qFromLittleEndian<quint64>(
-        *reinterpret_cast<const quint64*>(header.constData() + 27)));
-    plainLenOut = qFromLittleEndian<quint64>(
-        *reinterpret_cast<const quint64*>(header.constData() + 35));
+    std::memcpy(&opsRaw, header.constData() + 19, sizeof(opsRaw));
+    std::memcpy(&memRaw, header.constData() + 27, sizeof(memRaw));
+    std::memcpy(&plainRaw, header.constData() + 35, sizeof(plainRaw));
+    paramsOut.opsLimit = qFromLittleEndian(opsRaw);
+    paramsOut.memLimit = static_cast<size_t>(qFromLittleEndian(memRaw));
+    plainLenOut = qFromLittleEndian(plainRaw);
     return CryptoManager::isValidSalt(saltOut) && CryptoManager::isValidKdfParams(paramsOut);
+}
+
+template<typename RowFn>
+bool queryAllRows(sqlite3* db, const char* sql, RowFn&& onRow) {
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        return false;
+    }
+    int rc = SQLITE_OK;
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+        if (!onRow(stmt)) {
+            sqlite3_finalize(stmt);
+            return false;
+        }
+    }
+    sqlite3_finalize(stmt);
+    return rc == SQLITE_DONE;
 }
 
 } // namespace
@@ -287,15 +309,17 @@ bool VaultRepository::cryptoFormatIsV2() const {
     return v2;
 }
 
-void VaultRepository::setCryptoFormatV2() {
+bool VaultRepository::setCryptoFormatV2() {
     sqlite3_stmt* stmt = nullptr;
     const char* sql = "INSERT OR REPLACE INTO app_metadata (key, value) VALUES (?, ?);";
-    if (sqlite3_prepare_v2(m_db.handle(), sql, -1, &stmt, nullptr) == SQLITE_OK) {
-        sqlite3_bind_text(stmt, 1, kCryptoFormatKey, -1, SQLITE_STATIC);
-        sqlite3_bind_text(stmt, 2, kCryptoFormatV2Value, -1, SQLITE_STATIC);
-        sqlite3_step(stmt);
-        sqlite3_finalize(stmt);
+    if (sqlite3_prepare_v2(m_db.handle(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        return false;
     }
+    sqlite3_bind_text(stmt, 1, kCryptoFormatKey, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 2, kCryptoFormatV2Value, -1, SQLITE_STATIC);
+    const bool ok = sqlite3_step(stmt) == SQLITE_DONE;
+    sqlite3_finalize(stmt);
+    return ok;
 }
 
 bool VaultRepository::createVault(const QString& masterPassword) {
@@ -317,11 +341,18 @@ bool VaultRepository::createVault(const QString& masterPassword) {
     }
 
     DbTransaction tx(m_db);
+    if (!tx.isActive()) {
+        CryptoManager::secureZero(*key);
+        return false;
+    }
     if (!storeVaultInfo(info) || !writeVerificationToken(*key)) {
         CryptoManager::secureZero(*key);
         return false;
     }
-    setCryptoFormatV2();
+    if (!setCryptoFormatV2()) {
+        CryptoManager::secureZero(*key);
+        return false;
+    }
 
     const bool ok = tx.commit();
     CryptoManager::secureZero(*key);
@@ -390,42 +421,33 @@ bool VaultRepository::migrateDomainBoundCrypto(const QByteArray& key) {
     QVector<NoteRow> notes;
     QVector<AttachRow> attachments;
 
-    sqlite3_stmt* notesStmt = nullptr;
-    if (sqlite3_prepare_v2(
+    if (!queryAllRows(
             m_db.handle(),
             "SELECT id, encrypted_title, encrypted_body FROM notes;",
-            -1,
-            &notesStmt,
-            nullptr) == SQLITE_OK) {
-        while (sqlite3_step(notesStmt) == SQLITE_ROW) {
-            NoteRow row;
-            row.id = sqlite3_column_int64(notesStmt, 0);
-            const auto* tPtr = reinterpret_cast<const char*>(sqlite3_column_blob(notesStmt, 1));
-            row.title = QByteArray(tPtr, sqlite3_column_bytes(notesStmt, 1));
-            const auto* bPtr = reinterpret_cast<const char*>(sqlite3_column_blob(notesStmt, 2));
-            row.body = QByteArray(bPtr, sqlite3_column_bytes(notesStmt, 2));
-            notes.append(row);
-        }
-        sqlite3_finalize(notesStmt);
-    }
-
-    sqlite3_stmt* attachStmt = nullptr;
-    if (sqlite3_prepare_v2(
+            [&](sqlite3_stmt* notesStmt) {
+                NoteRow row;
+                row.id = sqlite3_column_int64(notesStmt, 0);
+                const auto* tPtr = reinterpret_cast<const char*>(sqlite3_column_blob(notesStmt, 1));
+                row.title = QByteArray(tPtr, sqlite3_column_bytes(notesStmt, 1));
+                const auto* bPtr = reinterpret_cast<const char*>(sqlite3_column_blob(notesStmt, 2));
+                row.body = QByteArray(bPtr, sqlite3_column_bytes(notesStmt, 2));
+                notes.append(row);
+                return true;
+            })
+        || !queryAllRows(
             m_db.handle(),
             "SELECT id, note_id, encrypted_data FROM note_attachments;",
-            -1,
-            &attachStmt,
-            nullptr) == SQLITE_OK) {
-        while (sqlite3_step(attachStmt) == SQLITE_ROW) {
-            AttachRow row;
-            row.id = QString::fromUtf8(
-                reinterpret_cast<const char*>(sqlite3_column_text(attachStmt, 0)));
-            row.noteId = sqlite3_column_int64(attachStmt, 1);
-            const auto* blob = reinterpret_cast<const char*>(sqlite3_column_blob(attachStmt, 2));
-            row.data = QByteArray(blob, sqlite3_column_bytes(attachStmt, 2));
-            attachments.append(row);
-        }
-        sqlite3_finalize(attachStmt);
+            [&](sqlite3_stmt* attachStmt) {
+                AttachRow row;
+                row.id = QString::fromUtf8(
+                    reinterpret_cast<const char*>(sqlite3_column_text(attachStmt, 0)));
+                row.noteId = sqlite3_column_int64(attachStmt, 1);
+                const auto* blob = reinterpret_cast<const char*>(sqlite3_column_blob(attachStmt, 2));
+                row.data = QByteArray(blob, sqlite3_column_bytes(attachStmt, 2));
+                attachments.append(row);
+                return true;
+            })) {
+        return false;
     }
 
     struct PreparedNote {
@@ -493,6 +515,9 @@ bool VaultRepository::migrateDomainBoundCrypto(const QByteArray& key) {
     }
 
     DbTransaction tx(m_db);
+    if (!tx.isActive()) {
+        return false;
+    }
     for (const PreparedNote& row : preparedNotes) {
         sqlite3_stmt* upd = nullptr;
         const char* sql =
@@ -528,7 +553,9 @@ bool VaultRepository::migrateDomainBoundCrypto(const QByteArray& key) {
     if (!writeVerificationToken(key)) {
         return false;
     }
-    setCryptoFormatV2();
+    if (!setCryptoFormatV2()) {
+        return false;
+    }
     return tx.commit();
 }
 
@@ -554,52 +581,79 @@ bool VaultRepository::changeMasterPassword(
 
     struct NoteRow { qint64 id; QByteArray title; QByteArray body; };
     struct AttachRow { QString id; QByteArray data; };
+    struct CredRow {
+        qint64 id = 0;
+        QByteArray label;
+        QByteArray username;
+        QByteArray password;
+        QByteArray url;
+        QByteArray notes;
+    };
     QVector<NoteRow> noteRows;
     QVector<AttachRow> attachRows;
+    QVector<CredRow> credRows;
 
-    sqlite3_stmt* notesStmt = nullptr;
-    if (sqlite3_prepare_v2(
+    if (!queryAllRows(
             m_db.handle(),
             "SELECT id, encrypted_title, encrypted_body FROM notes;",
-            -1,
-            &notesStmt,
-            nullptr) != SQLITE_OK) {
-        CryptoManager::secureZero(*newKey);
-        return false;
-    }
-    while (sqlite3_step(notesStmt) == SQLITE_ROW) {
-        NoteRow row;
-        row.id = sqlite3_column_int64(notesStmt, 0);
-        const auto* tPtr = reinterpret_cast<const char*>(sqlite3_column_blob(notesStmt, 1));
-        row.title = QByteArray(tPtr, sqlite3_column_bytes(notesStmt, 1));
-        const auto* bPtr = reinterpret_cast<const char*>(sqlite3_column_blob(notesStmt, 2));
-        row.body = QByteArray(bPtr, sqlite3_column_bytes(notesStmt, 2));
-        noteRows.append(row);
-    }
-    sqlite3_finalize(notesStmt);
-
-    sqlite3_stmt* attachStmt = nullptr;
-    if (sqlite3_prepare_v2(
+            [&](sqlite3_stmt* notesStmt) {
+                NoteRow row;
+                row.id = sqlite3_column_int64(notesStmt, 0);
+                const auto* tPtr = reinterpret_cast<const char*>(sqlite3_column_blob(notesStmt, 1));
+                row.title = QByteArray(tPtr, sqlite3_column_bytes(notesStmt, 1));
+                const auto* bPtr = reinterpret_cast<const char*>(sqlite3_column_blob(notesStmt, 2));
+                row.body = QByteArray(bPtr, sqlite3_column_bytes(notesStmt, 2));
+                noteRows.append(row);
+                return true;
+            })
+        || !queryAllRows(
             m_db.handle(),
             "SELECT id, encrypted_data FROM note_attachments;",
-            -1,
-            &attachStmt,
-            nullptr) == SQLITE_OK) {
-        while (sqlite3_step(attachStmt) == SQLITE_ROW) {
-            AttachRow row;
-            row.id = QString::fromUtf8(
-                reinterpret_cast<const char*>(sqlite3_column_text(attachStmt, 0)));
-            const auto* blob = reinterpret_cast<const char*>(sqlite3_column_blob(attachStmt, 1));
-            row.data = QByteArray(blob, sqlite3_column_bytes(attachStmt, 1));
-            attachRows.append(row);
-        }
-        sqlite3_finalize(attachStmt);
+            [&](sqlite3_stmt* attachStmt) {
+                AttachRow row;
+                row.id = QString::fromUtf8(
+                    reinterpret_cast<const char*>(sqlite3_column_text(attachStmt, 0)));
+                const auto* blob = reinterpret_cast<const char*>(sqlite3_column_blob(attachStmt, 1));
+                row.data = QByteArray(blob, sqlite3_column_bytes(attachStmt, 1));
+                attachRows.append(row);
+                return true;
+            })
+        || !queryAllRows(
+            m_db.handle(),
+            "SELECT id, encrypted_label, encrypted_username, encrypted_password, "
+            "encrypted_url, encrypted_notes FROM credentials;",
+            [&](sqlite3_stmt* credStmt) {
+                CredRow row;
+                row.id = sqlite3_column_int64(credStmt, 0);
+                const auto readBlob = [&](int col) {
+                    const auto* ptr = reinterpret_cast<const char*>(sqlite3_column_blob(credStmt, col));
+                    return QByteArray(ptr, sqlite3_column_bytes(credStmt, col));
+                };
+                row.label = readBlob(1);
+                row.username = readBlob(2);
+                row.password = readBlob(3);
+                row.url = readBlob(4);
+                row.notes = readBlob(5);
+                credRows.append(row);
+                return true;
+            })) {
+        CryptoManager::secureZero(*newKey);
+        return false;
     }
 
     struct PreparedNote { qint64 id; QByteArray title; QByteArray body; };
     struct PreparedAttach { QString id; QByteArray data; };
+    struct PreparedCred {
+        qint64 id = 0;
+        QByteArray label;
+        QByteArray username;
+        QByteArray password;
+        QByteArray url;
+        QByteArray notes;
+    };
     QVector<PreparedNote> preparedNotes;
     QVector<PreparedAttach> preparedAttachments;
+    QVector<PreparedCred> preparedCreds;
 
     for (const NoteRow& row : noteRows) {
         auto plainTitle = CryptoManager::decryptField(
@@ -653,6 +707,35 @@ bool VaultRepository::changeMasterPassword(
         preparedAttachments.append({row.id, *enc});
     }
 
+    for (const CredRow& row : credRows) {
+        static const char* kFields[] = {"label", "username", "password", "url", "notes"};
+        const QByteArray* blobs[] = {&row.label, &row.username, &row.password, &row.url, &row.notes};
+        PreparedCred out;
+        out.id = row.id;
+        QByteArray* outs[] = {&out.label, &out.username, &out.password, &out.url, &out.notes};
+        for (int i = 0; i < 5; ++i) {
+            auto plain = CryptoManager::decryptField(
+                *blobs[i], currentKey, CryptoManager::credentialFieldAssociatedData(row.id, kFields[i]));
+            if (!plain) {
+                plain = CryptoManager::decryptLegacy(*blobs[i], currentKey);
+            }
+            if (!plain) {
+                CryptoManager::secureZero(*newKey);
+                return false;
+            }
+            QByteArray p = *plain;
+            const auto enc = CryptoManager::encryptField(
+                p, *newKey, CryptoManager::credentialFieldAssociatedData(row.id, kFields[i]));
+            CryptoManager::secureZero(p);
+            if (!enc) {
+                CryptoManager::secureZero(*newKey);
+                return false;
+            }
+            *outs[i] = *enc;
+        }
+        preparedCreds.append(out);
+    }
+
     const auto verifyEnc = CryptoManager::encryptField(
         QByteArray("GRIMLEDGER_OK"), *newKey, CryptoManager::verifyAssociatedData());
     if (!verifyEnc) {
@@ -661,6 +744,10 @@ bool VaultRepository::changeMasterPassword(
     }
 
     DbTransaction tx(m_db);
+    if (!tx.isActive()) {
+        CryptoManager::secureZero(*newKey);
+        return false;
+    }
     sqlite3_stmt* verifyStmt = nullptr;
     const char* verifySql = "UPDATE app_metadata SET value = ? WHERE key = 'verify';";
     if (sqlite3_prepare_v2(m_db.handle(), verifySql, -1, &verifyStmt, nullptr) != SQLITE_OK) {
@@ -711,6 +798,29 @@ bool VaultRepository::changeMasterPassword(
         }
     }
 
+    for (const PreparedCred& row : preparedCreds) {
+        sqlite3_stmt* upd = nullptr;
+        const char* sql =
+            "UPDATE credentials SET encrypted_label = ?, encrypted_username = ?, "
+            "encrypted_password = ?, encrypted_url = ?, encrypted_notes = ? WHERE id = ?;";
+        if (sqlite3_prepare_v2(m_db.handle(), sql, -1, &upd, nullptr) != SQLITE_OK) {
+            CryptoManager::secureZero(*newKey);
+            return false;
+        }
+        sqlite3_bind_blob(upd, 1, row.label.constData(), row.label.size(), SQLITE_TRANSIENT);
+        sqlite3_bind_blob(upd, 2, row.username.constData(), row.username.size(), SQLITE_TRANSIENT);
+        sqlite3_bind_blob(upd, 3, row.password.constData(), row.password.size(), SQLITE_TRANSIENT);
+        sqlite3_bind_blob(upd, 4, row.url.constData(), row.url.size(), SQLITE_TRANSIENT);
+        sqlite3_bind_blob(upd, 5, row.notes.constData(), row.notes.size(), SQLITE_TRANSIENT);
+        sqlite3_bind_int64(upd, 6, row.id);
+        const bool ok = sqlite3_step(upd) == SQLITE_DONE;
+        sqlite3_finalize(upd);
+        if (!ok) {
+            CryptoManager::secureZero(*newKey);
+            return false;
+        }
+    }
+
     info->salt = newSalt;
     info->updatedAt = TimeUtils::toUnix(QDateTime::currentDateTimeUtc());
     if (!storeVaultInfo(*info) || !tx.commit()) {
@@ -722,7 +832,25 @@ bool VaultRepository::changeMasterPassword(
     return true;
 }
 
+bool VaultRepository::verifyMasterPassword(const QString& password) const {
+    const auto info = loadVaultInfo();
+    if (!info) {
+        return false;
+    }
+    auto key = CryptoManager::deriveKey(password, info->salt, info->kdfParams);
+    if (!key) {
+        return false;
+    }
+    const bool ok = verifyWithKey(m_db.handle(), *key, nullptr);
+    CryptoManager::secureZero(*key);
+    return ok;
+}
+
 bool VaultRepository::exportEncryptedBackupV2(const QString& destPath, const QString& password) {
+    if (!verifyMasterPassword(password)) {
+        return false;
+    }
+
     QFile src(m_db.path());
     if (!src.open(QIODevice::ReadOnly)) {
         return false;

@@ -25,7 +25,10 @@ public:
         qint64 noteId,
         const QByteArray& key) const;
 
-    QHash<QString, QString> duplicateAttachments(qint64 fromNoteId, qint64 toNoteId) const;
+    QHash<QString, QString> duplicateAttachments(
+        qint64 fromNoteId,
+        qint64 toNoteId,
+        const QByteArray& key) const;
 
     QString remapAttachmentUrls(
         const QString& body,

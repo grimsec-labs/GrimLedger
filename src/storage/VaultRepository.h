@@ -32,6 +32,7 @@ public:
 
     bool migrateDomainBoundCrypto(const QByteArray& key);
 
+    bool verifyMasterPassword(const QString& password) const;
     bool exportEncryptedBackupV2(const QString& destPath, const QString& password);
     bool exportEncryptedBackupLegacy(const QByteArray& key, const QString& destPath);
 
@@ -58,7 +59,7 @@ private:
     bool writeVerificationToken(const QByteArray& key);
     bool verificationTokenExists() const;
     bool cryptoFormatIsV2() const;
-    void setCryptoFormatV2();
+    bool setCryptoFormatV2();
 
     Database& m_db;
 };

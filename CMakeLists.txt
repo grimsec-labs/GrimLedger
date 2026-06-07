@@ -68,6 +68,8 @@ set(SOURCES
     src/ui/Sidebar.cpp
     src/ui/NoteList.cpp
     src/ui/NoteEditor.cpp
+    src/ui/CredentialList.cpp
+    src/ui/CredentialEditor.cpp
     src/ui/MarkdownPreview.cpp
     src/ui/SettingsWindow.cpp
     src/ui/CustomTitleBar.cpp
@@ -83,6 +85,7 @@ set(SOURCES
     src/storage/Database.cpp
     src/storage/DbTransaction.cpp
     src/storage/NoteRepository.cpp
+    src/storage/CredentialRepository.cpp
     src/storage/AttachmentRepository.cpp
     src/storage/VaultRepository.cpp
     src/search/SearchEngine.cpp
@@ -90,6 +93,8 @@ set(SOURCES
     src/utils/SecureStringUtils.cpp
     src/utils/Theme.cpp
     src/utils/ImageSanitizer.cpp
+    src/utils/PasswordGenerator.cpp
+    src/utils/ClipboardUtils.cpp
     src/utils/AppSettings.cpp
     src/utils/DialogUtils.cpp
     src/markdown/MarkdownRenderer.cpp
@@ -103,6 +108,8 @@ set(HEADERS
     src/ui/Sidebar.h
     src/ui/NoteList.h
     src/ui/NoteEditor.h
+    src/ui/CredentialList.h
+    src/ui/CredentialEditor.h
     src/ui/MarkdownPreview.h
     src/ui/SettingsWindow.h
     src/ui/CustomTitleBar.h
@@ -118,9 +125,11 @@ set(HEADERS
     src/storage/Database.h
     src/storage/DbTransaction.h
     src/storage/NoteRepository.h
+    src/storage/CredentialRepository.h
     src/storage/AttachmentRepository.h
     src/storage/VaultRepository.h
     src/models/Note.h
+    src/models/Credential.h
     src/models/Folder.h
     src/models/Tag.h
     src/search/SearchEngine.h
@@ -128,6 +137,8 @@ set(HEADERS
     src/utils/SecureStringUtils.h
     src/utils/Theme.h
     src/utils/ImageSanitizer.h
+    src/utils/PasswordGenerator.h
+    src/utils/ClipboardUtils.h
     src/utils/AppSettings.h
     src/utils/DialogUtils.h
     src/markdown/MarkdownRenderer.h

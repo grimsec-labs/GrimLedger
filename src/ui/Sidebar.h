@@ -11,6 +11,7 @@ enum class SidebarSection {
     AllNotes,
     Favorites,
     Recent,
+    Passwords,
     Folder,
     Tag,
     Settings,
