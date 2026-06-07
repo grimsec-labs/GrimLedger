@@ -23,3 +23,12 @@ struct CredentialLoadResult {
     bool integrityError = false;
     QString errorMessage;
 };
+
+struct ExportResult {
+    int ok = 0;
+    int failed = 0;
+    int skippedIntegrity = 0;
+    int collisions = 0;
+
+    bool allOk() const { return failed == 0 && skippedIntegrity == 0; }
+};

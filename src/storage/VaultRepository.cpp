@@ -1074,7 +1074,7 @@ bool VaultRepository::validateVaultFile(const QString& path, QString* errorOut) 
     return ok;
 }
 
-bool VaultRepository::restoreFromBackup(
+RestoreResult VaultRepository::restoreFromBackup(
     const QString& backupPath,
     const QString& password,
     const QString& liveVaultPath,
@@ -1084,13 +1084,13 @@ bool VaultRepository::restoreFromBackup(
         if (errorOut) {
             *errorOut = QStringLiteral("Could not open backup file.");
         }
-        return false;
+        return RestoreResult::Failed;
     }
     if (backup.size() > SecurityLimits::kMaxBackupFileBytes) {
         if (errorOut) {
             *errorOut = QStringLiteral("Backup file is too large.");
         }
-        return false;
+        return RestoreResult::Failed;
     }
 
     char magic[9] = {};
@@ -1098,7 +1098,7 @@ bool VaultRepository::restoreFromBackup(
         if (errorOut) {
             *errorOut = QStringLiteral("Backup file is truncated.");
         }
-        return false;
+        return RestoreResult::Failed;
     }
 
     QByteArray plaintext;
@@ -1108,7 +1108,7 @@ bool VaultRepository::restoreFromBackup(
             if (errorOut) {
                 *errorOut = QStringLiteral("Backup header is invalid.");
             }
-            return false;
+            return RestoreResult::Failed;
         }
 
         QByteArray salt;
@@ -1119,7 +1119,7 @@ bool VaultRepository::restoreFromBackup(
             if (errorOut) {
                 *errorOut = QStringLiteral("Backup header metadata is invalid.");
             }
-            return false;
+            return RestoreResult::Failed;
         }
 
         const auto payload = readBounded(backup, SecurityLimits::kMaxBackupFileBytes);
@@ -1127,7 +1127,7 @@ bool VaultRepository::restoreFromBackup(
             if (errorOut) {
                 *errorOut = QStringLiteral("Backup payload is invalid.");
             }
-            return false;
+            return RestoreResult::Failed;
         }
 
         auto backupKey = CryptoManager::deriveKey(password, salt, params);
@@ -1135,7 +1135,7 @@ bool VaultRepository::restoreFromBackup(
             if (errorOut) {
                 *errorOut = QStringLiteral("Could not derive backup key.");
             }
-            return false;
+            return RestoreResult::Failed;
         }
 
         const QByteArray aad = CryptoManager::backupEnvelopeAssociatedData(header);
@@ -1145,7 +1145,7 @@ bool VaultRepository::restoreFromBackup(
             if (errorOut) {
                 *errorOut = QStringLiteral("Could not decrypt backup. Wrong password or corrupted file.");
             }
-            return false;
+            return RestoreResult::Failed;
         }
         if (static_cast<quint64>(decrypted->size()) != expectedPlainLen) {
             if (errorOut) {
@@ -1153,7 +1153,7 @@ bool VaultRepository::restoreFromBackup(
             }
             QByteArray tmp = *decrypted;
             CryptoManager::secureZero(tmp);
-            return false;
+            return RestoreResult::Failed;
         }
         plaintext = std::move(*decrypted);
     } else if (qstrncmp(magic, kBackupMagicV1, 9) == 0) {
@@ -1162,12 +1162,12 @@ bool VaultRepository::restoreFromBackup(
                 "Legacy backup format requires an unlocked vault session. "
                 "Use a GRIMBKUP2 backup for standalone restore.");
         }
-        return false;
+        return RestoreResult::Failed;
     } else {
         if (errorOut) {
             *errorOut = QStringLiteral("Unknown backup format.");
         }
-        return false;
+        return RestoreResult::Failed;
     }
 
     const QFileInfo liveInfo(liveVaultPath);
@@ -1181,21 +1181,21 @@ bool VaultRepository::restoreFromBackup(
         if (errorOut) {
             *errorOut = QStringLiteral("Could not create temporary restore file.");
         }
-        return false;
+        return RestoreResult::Failed;
     }
     if (tempFile.write(plaintext) != plaintext.size()) {
         CryptoManager::secureZero(plaintext);
         if (errorOut) {
             *errorOut = QStringLiteral("Could not write temporary restore file.");
         }
-        return false;
+        return RestoreResult::Failed;
     }
     CryptoManager::secureZero(plaintext);
     if (!tempFile.commit()) {
         if (errorOut) {
             *errorOut = QStringLiteral("Could not finalize temporary restore file.");
         }
-        return false;
+        return RestoreResult::Failed;
     }
 
     QString validationError;
@@ -1204,7 +1204,7 @@ bool VaultRepository::restoreFromBackup(
         if (errorOut) {
             *errorOut = validationError;
         }
-        return false;
+        return RestoreResult::Failed;
     }
 
     sqlite3* tempDb = nullptr;
@@ -1213,7 +1213,7 @@ bool VaultRepository::restoreFromBackup(
         if (errorOut) {
             *errorOut = QStringLiteral("Restored database could not be opened for verification.");
         }
-        return false;
+        return RestoreResult::Failed;
     }
 
     VaultInfo info;
@@ -1229,7 +1229,7 @@ bool VaultRepository::restoreFromBackup(
         if (errorOut) {
             *errorOut = QStringLiteral("Restored vault metadata is missing.");
         }
-        return false;
+        return RestoreResult::Failed;
     }
     info.version = sqlite3_column_int(stmt, 0);
     const auto* saltPtr = reinterpret_cast<const char*>(sqlite3_column_blob(stmt, 1));
@@ -1245,7 +1245,7 @@ bool VaultRepository::restoreFromBackup(
         if (errorOut) {
             *errorOut = QStringLiteral("Could not derive vault key from backup password.");
         }
-        return false;
+        return RestoreResult::Failed;
     }
 
     const bool cryptoOk = verifyWithKey(tempDb, *key, &validationError);
@@ -1256,13 +1256,13 @@ bool VaultRepository::restoreFromBackup(
         if (errorOut) {
             *errorOut = validationError;
         }
-        return false;
+        return RestoreResult::Failed;
     }
 
     return installValidatedPlaintextVault(tempPath, liveVaultPath, errorOut);
 }
 
-bool VaultRepository::restoreLegacyBackupInSession(
+RestoreResult VaultRepository::restoreLegacyBackupInSession(
     const QString& backupPath,
     const QByteArray& sessionKey,
     const QString& liveVaultPath,
@@ -1272,13 +1272,13 @@ bool VaultRepository::restoreLegacyBackupInSession(
         if (errorOut) {
             *errorOut = QStringLiteral("Could not open backup file.");
         }
-        return false;
+        return RestoreResult::Failed;
     }
     if (backup.size() > SecurityLimits::kMaxBackupFileBytes) {
         if (errorOut) {
             *errorOut = QStringLiteral("Backup file is too large.");
         }
-        return false;
+        return RestoreResult::Failed;
     }
 
     char magic[9] = {};
@@ -1286,7 +1286,7 @@ bool VaultRepository::restoreLegacyBackupInSession(
         if (errorOut) {
             *errorOut = QStringLiteral("Not a legacy GRIMBKUP1 backup.");
         }
-        return false;
+        return RestoreResult::Failed;
     }
 
     const auto payload = readBounded(backup, SecurityLimits::kMaxBackupFileBytes);
@@ -1294,7 +1294,7 @@ bool VaultRepository::restoreLegacyBackupInSession(
         if (errorOut) {
             *errorOut = QStringLiteral("Backup payload is invalid.");
         }
-        return false;
+        return RestoreResult::Failed;
     }
 
     const auto decrypted = CryptoManager::decryptLegacy(*payload, sessionKey);
@@ -1302,7 +1302,7 @@ bool VaultRepository::restoreLegacyBackupInSession(
         if (errorOut) {
             *errorOut = QStringLiteral("Could not decrypt legacy backup with the current vault key.");
         }
-        return false;
+        return RestoreResult::Failed;
     }
     QByteArray plain = *decrypted;
     QByteArray tmp = std::move(*decrypted);
@@ -1312,7 +1312,7 @@ bool VaultRepository::restoreLegacyBackupInSession(
         if (errorOut) {
             *errorOut = QStringLiteral("Decrypted backup is too large.");
         }
-        return false;
+        return RestoreResult::Failed;
     }
 
     const QFileInfo liveInfo(liveVaultPath);
@@ -1326,21 +1326,21 @@ bool VaultRepository::restoreLegacyBackupInSession(
         if (errorOut) {
             *errorOut = QStringLiteral("Could not create temporary restore file.");
         }
-        return false;
+        return RestoreResult::Failed;
     }
     if (tempFile.write(plain) != plain.size()) {
         CryptoManager::secureZero(plain);
         if (errorOut) {
             *errorOut = QStringLiteral("Could not write temporary restore file.");
         }
-        return false;
+        return RestoreResult::Failed;
     }
     CryptoManager::secureZero(plain);
     if (!tempFile.commit()) {
         if (errorOut) {
             *errorOut = QStringLiteral("Could not finalize temporary restore file.");
         }
-        return false;
+        return RestoreResult::Failed;
     }
 
     QString validationError;
@@ -1349,13 +1349,13 @@ bool VaultRepository::restoreLegacyBackupInSession(
         if (errorOut) {
             *errorOut = validationError;
         }
-        return false;
+        return RestoreResult::Failed;
     }
 
     return installValidatedPlaintextVault(tempPath, liveVaultPath, errorOut);
 }
 
-bool VaultRepository::installValidatedPlaintextVault(
+RestoreResult VaultRepository::installValidatedPlaintextVault(
     const QString& tempPath,
     const QString& liveVaultPath,
     QString* errorOut) {
@@ -1370,7 +1370,7 @@ bool VaultRepository::installValidatedPlaintextVault(
         if (errorOut) {
             *errorOut = QStringLiteral("Could not preserve the existing vault before restore.");
         }
-        return false;
+        return RestoreResult::Failed;
     }
 
     if (!QFile::rename(tempPath, liveVaultPath)) {
@@ -1380,21 +1380,21 @@ bool VaultRepository::installValidatedPlaintextVault(
                 if (errorOut) {
                     *errorOut = QStringLiteral("Restore install failed and rollback was blocked.");
                 }
-                return false;
+                return RestoreResult::Failed;
             }
             if (!QFile::rename(backupLivePath, liveVaultPath)) {
                 QFile::remove(tempPath);
                 if (errorOut) {
                     *errorOut = QStringLiteral("Restore install failed and rollback failed.");
                 }
-                return false;
+                return RestoreResult::Failed;
             }
         }
         QFile::remove(tempPath);
         if (errorOut) {
             *errorOut = QStringLiteral("Could not install restored vault.");
         }
-        return false;
+        return RestoreResult::Failed;
     }
 
     sqlite3* installedDb = nullptr;
@@ -1408,19 +1408,20 @@ bool VaultRepository::installValidatedPlaintextVault(
             if (errorOut) {
                 *errorOut = QStringLiteral("Installed vault failed validation and rollback failed.");
             }
-            return false;
+            return RestoreResult::Failed;
         }
         if (errorOut && errorOut->isEmpty()) {
             *errorOut = QStringLiteral("Installed vault failed validation and was rolled back.");
         }
-        return false;
+        return RestoreResult::Failed;
     }
     sqlite3_close(installedDb);
     if (QFile::exists(backupLivePath) && !QFile::remove(backupLivePath)) {
         if (errorOut) {
-            *errorOut = QStringLiteral("Restore succeeded but old vault backup could not be removed.");
+            *errorOut = QStringLiteral(
+                "Vault restored successfully, but the old vault backup file could not be removed.");
         }
-        return false;
+        return RestoreResult::InstalledWithCleanupWarning;
     }
-    return true;
+    return RestoreResult::Installed;
 }

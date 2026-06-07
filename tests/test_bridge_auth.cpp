@@ -2,7 +2,7 @@
 
 int main() {
     const QByteArray token = BridgeAuth::generateToken();
-    if (token.size() < 16) {
+    if (token.size() != 32) {
         return 1;
     }
     if (!BridgeAuth::writeSessionToken(token)) {
@@ -15,6 +15,19 @@ int main() {
     if (!BridgeAuth::constantTimeEquals(token, readBack)) {
         return 1;
     }
+
+    const QString transport = BridgeAuth::tokenToTransportString(token);
+    if (transport.size() != 64) {
+        return 1;
+    }
+    const auto decoded = BridgeAuth::tokenFromTransportString(transport);
+    if (!decoded || !BridgeAuth::constantTimeEquals(token, *decoded)) {
+        return 1;
+    }
+    if (BridgeAuth::tokenFromTransportString(QStringLiteral("not-hex"))) {
+        return 1;
+    }
+
     if (!BridgeAuth::constantTimeEquals(QByteArray("abc"), QByteArray("abc"))) {
         return 1;
     }

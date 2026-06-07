@@ -1,5 +1,6 @@
 #include "bridge/CredentialBridgeServer.h"
 #include "bridge/BridgeAuth.h"
+#include "bridge/BridgeFillCoordinator.h"
 #include "bridge/OriginMatcher.h"
 #include "models/CredentialSummary.h"
 #include "storage/CredentialRepository.h"
@@ -36,6 +37,10 @@ CredentialBridgeServer::~CredentialBridgeServer() {
 }
 
 QString CredentialBridgeServer::serverName() {
+    QString endpoint;
+    if (BridgeAuth::readSessionEndpoint(endpoint)) {
+        return endpoint;
+    }
     return BridgeAuth::endpointName();
 }
 
@@ -51,8 +56,8 @@ void CredentialBridgeServer::setRepository(CredentialRepository* repository) {
     m_repository = repository;
 }
 
-void CredentialBridgeServer::setConfirmFillHandler(ConfirmFillFn handler) {
-    m_confirmFill = std::move(handler);
+void CredentialBridgeServer::setFillCoordinator(BridgeFillCoordinator* coordinator) {
+    m_fillCoordinator = coordinator;
 }
 
 void CredentialBridgeServer::setUnlockedChecker(IsUnlockedFn checker) {
@@ -71,15 +76,18 @@ bool CredentialBridgeServer::start() {
     stop();
 
     m_sessionToken = BridgeAuth::generateToken();
-    if (!BridgeAuth::writeSessionToken(m_sessionToken)) {
+    m_endpoint = BridgeAuth::generateSessionEndpoint();
+    if (!BridgeAuth::writeSessionToken(m_sessionToken)
+        || !BridgeAuth::writeSessionEndpoint(m_endpoint)) {
         emit listenFailed(QStringLiteral("Could not write bridge session token."));
         return false;
     }
 
-    QLocalServer::removeServer(serverName());
-    if (!m_server->listen(serverName())) {
+    QLocalServer::removeServer(m_endpoint);
+    if (!m_server->listen(m_endpoint)) {
         BridgeAuth::clearSessionToken();
         m_sessionToken.clear();
+        m_endpoint.clear();
         emit listenFailed(QStringLiteral("Could not listen on bridge endpoint."));
         return false;
     }
@@ -89,24 +97,32 @@ bool CredentialBridgeServer::start() {
 void CredentialBridgeServer::stop() {
     cancelPendingRequests();
     ++m_lockGeneration;
+    if (m_fillCoordinator) {
+        m_fillCoordinator->setLockGeneration(m_lockGeneration);
+    }
 
     if (m_server->isListening()) {
         m_server->close();
     }
-    QLocalServer::removeServer(serverName());
+    if (!m_endpoint.isEmpty()) {
+        QLocalServer::removeServer(m_endpoint);
+    }
     m_lineBuffers.clear();
     m_activeClients = 0;
     m_sessionToken.clear();
+    m_endpoint.clear();
     BridgeAuth::clearSessionToken();
 }
 
 void CredentialBridgeServer::cancelPendingRequests() {
-    for (auto it = m_pendingFills.begin(); it != m_pendingFills.end(); ++it) {
+    if (m_fillCoordinator) {
+        m_fillCoordinator->cancelAll();
+    }
+    for (auto it = m_lineBuffers.begin(); it != m_lineBuffers.end(); ++it) {
         if (QLocalSocket* socket = it.key()) {
             writeResponse(socket, errorResponse(QStringLiteral("Request cancelled.")));
         }
     }
-    m_pendingFills.clear();
 }
 
 bool CredentialBridgeServer::validateToken(const QJsonObject& req) const {
@@ -114,9 +130,11 @@ bool CredentialBridgeServer::validateToken(const QJsonObject& req) const {
     if (token.isEmpty() || m_sessionToken.isEmpty()) {
         return false;
     }
-    return BridgeAuth::constantTimeEquals(
-        m_sessionToken,
-        token.toUtf8());
+    const auto decoded = BridgeAuth::tokenFromTransportString(token);
+    if (!decoded) {
+        return false;
+    }
+    return BridgeAuth::constantTimeEquals(m_sessionToken, *decoded);
 }
 
 void CredentialBridgeServer::writeResponse(QLocalSocket* socket, const QJsonObject& response) {
@@ -124,8 +142,13 @@ void CredentialBridgeServer::writeResponse(QLocalSocket* socket, const QJsonObje
         return;
     }
     const QByteArray payload = QJsonDocument(response).toJson(QJsonDocument::Compact) + '\n';
-    if (socket->write(payload) != payload.size()) {
-        return;
+    qint64 written = 0;
+    while (written < payload.size()) {
+        const qint64 chunk = socket->write(payload.constData() + written, payload.size() - written);
+        if (chunk <= 0) {
+            return;
+        }
+        written += chunk;
     }
     socket->flush();
 }
@@ -148,7 +171,9 @@ void CredentialBridgeServer::onNewConnection() {
 
 void CredentialBridgeServer::onClientDisconnected() {
     if (auto* client = qobject_cast<QLocalSocket*>(sender())) {
-        m_pendingFills.remove(client);
+        if (m_fillCoordinator) {
+            m_fillCoordinator->takePending(client);
+        }
         m_lineBuffers.remove(client);
         if (m_activeClients > 0) {
             --m_activeClients;
@@ -260,11 +285,11 @@ void CredentialBridgeServer::handleRequest(QLocalSocket* socket, const QByteArra
     }
 
     if (action == QStringLiteral("fill")) {
-        if (!m_confirmFill) {
+        if (!m_fillCoordinator) {
             writeResponse(socket, errorResponse(QStringLiteral("Fill confirmation is not configured.")));
             return;
         }
-        if (!m_pendingFills.isEmpty()) {
+        if (m_fillCoordinator->hasPendingFill()) {
             writeResponse(socket, errorResponse(QStringLiteral("Another fill is already pending.")));
             return;
         }
@@ -292,31 +317,31 @@ void CredentialBridgeServer::handleRequest(QLocalSocket* socket, const QByteArra
             return;
         }
 
-        PendingFill pending;
+        BridgeFillCoordinator::PendingFill pending;
         pending.socket = socket;
         pending.credId = id;
         pending.origin = origin;
+        pending.nonce = nonce;
         pending.label = cred->label;
         pending.lockGeneration = m_lockGeneration;
-        m_pendingFills.insert(socket, pending);
-
-        m_confirmFill(cred->label, origin, [this, socket](bool approved) {
-            completePendingFill(socket, approved);
-        });
+        if (!m_fillCoordinator->beginFill(pending)) {
+            writeResponse(socket, errorResponse(QStringLiteral("Could not start fill confirmation.")));
+        }
         return;
     }
 
     writeResponse(socket, errorResponse(QStringLiteral("Unknown action.")));
 }
 
-void CredentialBridgeServer::completePendingFill(QLocalSocket* socket, bool approved) {
-    const auto it = m_pendingFills.find(socket);
-    if (it == m_pendingFills.end()) {
+void CredentialBridgeServer::completeFillDecision(QLocalSocket* socket, bool approved) {
+    if (!m_fillCoordinator) {
         return;
     }
-
-    const PendingFill pending = it.value();
-    m_pendingFills.erase(it);
+    const auto pendingOpt = m_fillCoordinator->takePending(socket);
+    if (!pendingOpt) {
+        return;
+    }
+    const BridgeFillCoordinator::PendingFill pending = *pendingOpt;
 
     if (!socket || socket->state() != QLocalSocket::ConnectedState) {
         return;
@@ -353,6 +378,7 @@ void CredentialBridgeServer::completePendingFill(QLocalSocket* socket, bool appr
 
     QJsonObject resp;
     resp.insert(QStringLiteral("ok"), true);
+    resp.insert(QStringLiteral("nonce"), pending.nonce);
     resp.insert(QStringLiteral("username"), cred->username);
     resp.insert(QStringLiteral("password"), cred->password);
     writeResponse(socket, resp);

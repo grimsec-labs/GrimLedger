@@ -69,29 +69,19 @@ async function refresh() {
 }
 
 async function fillMatch(id, tab) {
-  const nonce = crypto.randomUUID();
+  statusEl.textContent = "Requesting fill...";
+  statusEl.classList.remove("error");
+
   try {
-    const fill = await nativeRequest({
-      action: "fill",
+    const result = await chrome.runtime.sendMessage({
+      action: "fill_credentials",
       id,
       origin: tab.origin,
-      nonce,
+      tabId: tab.tabId,
     });
 
-    const currentTab = await chrome.tabs.get(tab.tabId);
-    if (!currentTab?.url || new URL(currentTab.url).origin !== tab.origin) {
-      throw new Error("Active tab changed before fill could complete.");
-    }
-
-    const fillResult = await chrome.tabs.sendMessage(tab.tabId, {
-      action: "fill_on_page",
-      username: fill.username,
-      password: fill.password,
-      expectedOrigin: tab.origin,
-    });
-
-    if (!fillResult || !fillResult.ok) {
-      throw new Error("Could not find login fields on this page.");
+    if (!result || !result.ok) {
+      throw new Error(result?.error || "Fill failed");
     }
 
     statusEl.textContent = "Filled successfully.";

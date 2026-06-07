@@ -62,6 +62,10 @@ bool pageOriginMatchesCredentialUrl(
         return false;
     }
 
+    if (page.scheme() != cred.scheme()) {
+        return false;
+    }
+
     if (effectivePort(page) != effectivePort(cred)) {
         return false;
     }

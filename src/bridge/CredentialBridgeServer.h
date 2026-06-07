@@ -3,21 +3,17 @@
 #include <QObject>
 #include <QByteArray>
 #include <QHash>
-#include <QPointer>
 #include <functional>
 
 class QLocalServer;
 class QLocalSocket;
 class CredentialRepository;
+class BridgeFillCoordinator;
 
 class CredentialBridgeServer : public QObject {
     Q_OBJECT
 
 public:
-    using ConfirmFillFn = std::function<void(
-        const QString& label,
-        const QString& origin,
-        std::function<void(bool approved)> callback)>;
     using IsUnlockedFn = std::function<bool()>;
     using SessionKeyFn = std::function<QByteArray()>;
     using BridgeEnabledFn = std::function<bool()>;
@@ -26,7 +22,7 @@ public:
     ~CredentialBridgeServer() override;
 
     void setRepository(CredentialRepository* repository);
-    void setConfirmFillHandler(ConfirmFillFn handler);
+    void setFillCoordinator(BridgeFillCoordinator* coordinator);
     void setUnlockedChecker(IsUnlockedFn checker);
     void setSessionKeyProvider(SessionKeyFn provider);
     void setBridgeEnabledChecker(BridgeEnabledFn checker);
@@ -34,6 +30,7 @@ public:
     bool start();
     void stop();
     void cancelPendingRequests();
+    void completeFillDecision(QLocalSocket* socket, bool approved);
 
     static QString serverName();
     static QByteArray currentSessionToken();
@@ -48,28 +45,19 @@ private slots:
     void onClientDisconnected();
 
 private:
-    struct PendingFill {
-        QPointer<QLocalSocket> socket;
-        qint64 credId = 0;
-        QString origin;
-        QString label;
-        quint64 lockGeneration = 0;
-    };
-
     bool validateToken(const QJsonObject& req) const;
     void writeResponse(QLocalSocket* socket, const QJsonObject& response);
     void handleRequest(QLocalSocket* socket, const QByteArray& line);
-    void completePendingFill(QLocalSocket* socket, bool approved);
 
     QLocalServer* m_server = nullptr;
     CredentialRepository* m_repository = nullptr;
-    ConfirmFillFn m_confirmFill;
+    BridgeFillCoordinator* m_fillCoordinator = nullptr;
     IsUnlockedFn m_isUnlocked;
     SessionKeyFn m_sessionKey;
     BridgeEnabledFn m_bridgeEnabled;
     QByteArray m_sessionToken;
+    QString m_endpoint;
     quint64 m_lockGeneration = 0;
     QHash<QLocalSocket*, QByteArray> m_lineBuffers;
-    QHash<QLocalSocket*, PendingFill> m_pendingFills;
     int m_activeClients = 0;
 };

@@ -100,6 +100,7 @@ set(SOURCES
     src/bridge/OriginMatcher.cpp
     src/bridge/BridgeAuth.cpp
     src/bridge/CredentialBridgeServer.cpp
+    src/bridge/BridgeFillCoordinator.cpp
     src/utils/SqliteUtils.cpp
     src/markdown/MarkdownRenderer.cpp
     src/markdown/SyntaxHighlighter.cpp
@@ -148,6 +149,7 @@ set(HEADERS
     src/bridge/OriginMatcher.h
     src/bridge/BridgeAuth.h
     src/bridge/CredentialBridgeServer.h
+    src/bridge/BridgeFillCoordinator.h
     src/models/CredentialSummary.h
     src/utils/RepositoryResult.h
     src/utils/SqliteUtils.h

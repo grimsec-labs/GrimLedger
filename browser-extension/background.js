@@ -42,9 +42,51 @@ function nativeRequest(payload) {
   });
 }
 
+async function fillCredentials(id, origin, tabId) {
+  const nonce = crypto.randomUUID();
+  const fill = await nativeRequest({
+    action: "fill",
+    id,
+    origin,
+    nonce,
+  });
+
+  if (!fill || fill.ok === false) {
+    throw new Error(fill?.error || "Bridge fill request failed");
+  }
+  if (fill.nonce !== nonce) {
+    throw new Error("Fill response nonce mismatch");
+  }
+
+  const currentTab = await chrome.tabs.get(tabId);
+  if (!currentTab?.url || new URL(currentTab.url).origin !== origin) {
+    throw new Error("Active tab changed before fill could complete.");
+  }
+
+  const fillResult = await chrome.tabs.sendMessage(tabId, {
+    action: "fill_on_page",
+    username: fill.username,
+    password: fill.password,
+    expectedOrigin: origin,
+  });
+
+  if (!fillResult || !fillResult.ok) {
+    throw new Error(fillResult?.error || "Could not find login fields on this page.");
+  }
+
+  return { ok: true };
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || !message.action) {
     return false;
+  }
+
+  if (message.action === "fill_credentials") {
+    fillCredentials(message.id, message.origin, message.tabId)
+      .then((result) => sendResponse(result))
+      .catch((error) => sendResponse({ ok: false, error: error.message || String(error) }));
+    return true;
   }
 
   nativeRequest(message)

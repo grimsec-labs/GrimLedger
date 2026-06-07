@@ -102,10 +102,14 @@ QByteArray forwardToDesktop(const QByteArray& requestLine) {
     }
 
     QJsonObject req = inDoc.object();
-    req.insert(QStringLiteral("token"), QString::fromUtf8(sessionToken));
+    req.insert(QStringLiteral("token"), BridgeAuth::tokenToTransportString(sessionToken));
 
     QLocalSocket socket;
-    socket.connectToServer(BridgeAuth::endpointName());
+    QString endpoint;
+    if (!BridgeAuth::readSessionEndpoint(endpoint)) {
+        endpoint = BridgeAuth::endpointName();
+    }
+    socket.connectToServer(endpoint);
     if (!socket.waitForConnected(2000)) {
         QJsonObject err;
         err.insert(QStringLiteral("ok"), false);
@@ -114,7 +118,17 @@ QByteArray forwardToDesktop(const QByteArray& requestLine) {
     }
 
     const QByteArray line = QJsonDocument(req).toJson(QJsonDocument::Compact) + '\n';
-    socket.write(line);
+    qint64 written = 0;
+    while (written < line.size()) {
+        const qint64 chunk = socket.write(line.constData() + written, line.size() - written);
+        if (chunk <= 0) {
+            QJsonObject err;
+            err.insert(QStringLiteral("ok"), false);
+            err.insert(QStringLiteral("error"), QStringLiteral("Failed to write bridge request."));
+            return QJsonDocument(err).toJson(QJsonDocument::Compact);
+        }
+        written += chunk;
+    }
     socket.flush();
     if (!socket.waitForReadyRead(10000)) {
         QJsonObject err;
@@ -160,7 +174,9 @@ int main(int argc, char* argv[]) {
 
         const QByteArray response = forwardToDesktop(
             QJsonDocument(inDoc.object()).toJson(QJsonDocument::Compact));
-        writeNativeMessage(response);
+        if (!writeNativeMessage(response)) {
+            break;
+        }
     }
 
     return 0;

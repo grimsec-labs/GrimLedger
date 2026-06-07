@@ -138,6 +138,8 @@ public:
 
     static QByteArray credentialFieldAssociatedData(qint64 credentialId, const char* field);
 
+    static QByteArray credentialFillPolicyAssociatedData(qint64 credentialId);
+
     static QByteArray backupEnvelopeAssociatedData(const QByteArray& header);
 
 

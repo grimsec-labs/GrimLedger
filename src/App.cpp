@@ -161,11 +161,13 @@ void App::handleAuthFailure() {
 
 void App::destroyVaultAfterFailedAttempts() {
     AppSettings::resetFailedUnlockAttempts();
-    m_session->lock();
 
     if (m_main) {
+        m_main->stopBridge();
         m_main->hide();
     }
+
+    m_session->lock();
 
     m_db->close();
     const QString vaultPath = m_db->path();

@@ -65,6 +65,17 @@ const char* kSelectColumns =
     "encrypted_url, encrypted_notes, created_at, updated_at, allow_subdomains "
     "FROM credentials";
 
+const char* kSummarySelectColumns =
+    "SELECT id, encrypted_label, encrypted_username, encrypted_url, "
+    "created_at, updated_at, allow_subdomains FROM credentials";
+
+constexpr int kSummaryColLabel = 1;
+constexpr int kSummaryColUsername = 2;
+constexpr int kSummaryColUrl = 3;
+constexpr int kSummaryColCreatedAt = 4;
+constexpr int kSummaryColUpdatedAt = 5;
+constexpr int kSummaryColAllowSubdomains = 6;
+
 } // namespace
 
 Credential CredentialRepository::rowToCredential(sqlite3_stmt* stmt, const QByteArray& key) const {
@@ -95,32 +106,40 @@ Credential CredentialRepository::rowToCredential(sqlite3_stmt* stmt, const QByte
 CredentialSummary CredentialRepository::rowToSummary(sqlite3_stmt* stmt, const QByteArray& key) const {
     CredentialSummary summary;
     summary.id = sqlite3_column_int64(stmt, 0);
-    summary.allowSubdomains = readAllowSubdomains(stmt, 8);
+    summary.allowSubdomains = readAllowSubdomains(stmt, kSummaryColAllowSubdomains);
 
-    static const char* kFields[] = {"label", "username", "url"};
-    QString* targets[] = {&summary.label, &summary.username, &summary.url};
-    for (int i = 0; i < 3; ++i) {
-        const auto* ptr = reinterpret_cast<const char*>(sqlite3_column_blob(stmt, 1 + i));
-        const QByteArray blob(ptr, sqlite3_column_bytes(stmt, 1 + i));
-        const DecryptResult<QString> dec = decryptField(blob, summary.id, kFields[i], key);
+    struct FieldMapping {
+        int column;
+        const char* field;
+        QString* target;
+    };
+    const FieldMapping mappings[] = {
+        {kSummaryColLabel, "label", &summary.label},
+        {kSummaryColUsername, "username", &summary.username},
+        {kSummaryColUrl, "url", &summary.url},
+    };
+    for (const FieldMapping& mapping : mappings) {
+        const auto* ptr = reinterpret_cast<const char*>(sqlite3_column_blob(stmt, mapping.column));
+        const QByteArray blob(ptr, sqlite3_column_bytes(stmt, mapping.column));
+        const DecryptResult<QString> dec = decryptField(blob, summary.id, mapping.field, key);
         if (dec.status == DecryptStatus::IntegrityError) {
             summary.label = QStringLiteral("(integrity error)");
             summary.username.clear();
             summary.url.clear();
             return summary;
         }
-        *targets[i] = dec.value;
+        *mapping.target = dec.value;
     }
 
-    summary.createdAt = TimeUtils::fromUnix(sqlite3_column_int64(stmt, 6));
-    summary.updatedAt = TimeUtils::fromUnix(sqlite3_column_int64(stmt, 7));
+    summary.createdAt = TimeUtils::fromUnix(sqlite3_column_int64(stmt, kSummaryColCreatedAt));
+    summary.updatedAt = TimeUtils::fromUnix(sqlite3_column_int64(stmt, kSummaryColUpdatedAt));
     return summary;
 }
 
 QVector<CredentialSummary> CredentialRepository::listCredentialSummaries(const QByteArray& key) const {
     QVector<CredentialSummary> creds;
     sqlite3_stmt* stmt = nullptr;
-    const QByteArray sql = QByteArray(kSelectColumns) + " ORDER BY updated_at DESC;";
+    const QByteArray sql = QByteArray(kSummarySelectColumns) + " ORDER BY updated_at DESC;";
 
     if (sqlite3_prepare_v2(m_db.handle(), sql.constData(), -1, &stmt, nullptr) != SQLITE_OK) {
         return creds;

@@ -126,7 +126,12 @@ void CredentialEditor::setUrl(const QString& text) { m_urlEdit->setText(text); }
 void CredentialEditor::setNotes(const QString& text) { m_notesEdit->setPlainText(text); }
 void CredentialEditor::setAllowSubdomains(bool enabled) { m_subdomainCheck->setChecked(enabled); }
 
+bool CredentialEditor::integrityError() const {
+    return m_integrityError;
+}
+
 void CredentialEditor::setIntegrityError(bool errored) {
+    m_integrityError = errored;
     const bool enabled = !errored;
     m_labelEdit->setEnabled(enabled);
     m_userEdit->setEnabled(enabled);
@@ -152,6 +157,7 @@ void CredentialEditor::setSavedState(bool saved, const QDateTime& updatedAt) {
 }
 
 void CredentialEditor::clearFields() {
+    m_integrityError = false;
     m_labelEdit->clear();
     m_userEdit->clear();
     m_passEdit->clear();

@@ -241,6 +241,10 @@ QByteArray CryptoManager::credentialFieldAssociatedData(qint64 credentialId, con
     return QByteArray("grim:cred:") + QByteArray::number(credentialId) + ':' + field;
 }
 
+QByteArray CryptoManager::credentialFillPolicyAssociatedData(qint64 credentialId) {
+    return QByteArray("grim:cred:") + QByteArray::number(credentialId) + QByteArray(":fill_policy");
+}
+
 QByteArray CryptoManager::backupEnvelopeAssociatedData(const QByteArray& header) {
     return QByteArray("grim:backup:v2:") + header;
 }

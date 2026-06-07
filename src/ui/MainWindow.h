@@ -16,6 +16,7 @@
 #include "markdown/MarkdownRenderer.h"
 #include "ui/Sidebar.h"
 #include "bridge/CredentialBridgeServer.h"
+#include "bridge/BridgeFillCoordinator.h"
 
 class Sidebar;
 class NoteList;
@@ -44,6 +45,7 @@ public:
     ~MainWindow() override;
 
     void onVaultUnlocked();
+    void stopBridge();
 
 private slots:
     void onSectionSelected(SidebarSection section, qint64 id);
@@ -102,8 +104,8 @@ private:
     void updatePreview();
     MarkdownRenderer::ImageUrlResolver imageResolver() const;
     void startBridge();
-    void stopBridge();
     void clearSensitiveUiState();
+    void finalizeVaultRestore(bool cleanupWarning, const QString& warningDetail = QString());
 
 protected:
     bool eventFilter(QObject* obj, QEvent* event) override;
@@ -115,6 +117,7 @@ protected:
     std::unique_ptr<NoteRepository> m_notes;
     std::unique_ptr<CredentialRepository> m_credentials;
     std::unique_ptr<VaultRepository> m_vault;
+    std::unique_ptr<BridgeFillCoordinator> m_fillCoordinator;
     std::unique_ptr<CredentialBridgeServer> m_bridge;
 
     Sidebar* m_sidebar = nullptr;

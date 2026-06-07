@@ -36,6 +36,10 @@ int main() {
                   QStringLiteral("https://example.com:8443"),
                   QStringLiteral("https://example.com")),
             "port mismatch rejected");
+        check(!OriginMatcher::pageOriginMatchesCredentialUrl(
+                  QStringLiteral("https://example.com"),
+                  QStringLiteral("http://example.com")),
+            "http credential rejected on https page");
     } catch (const char* message) {
         return message ? 1 : 1;
     }

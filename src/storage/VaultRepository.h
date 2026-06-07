@@ -15,6 +15,12 @@ struct VaultInfo {
     qint64 updatedAt = 0;
 };
 
+enum class RestoreResult {
+    Failed,
+    Installed,
+    InstalledWithCleanupWarning,
+};
+
 class VaultRepository {
 public:
     explicit VaultRepository(Database& db);
@@ -36,13 +42,13 @@ public:
     bool exportEncryptedBackupV2(const QString& destPath, const QString& password);
     bool exportEncryptedBackupLegacy(const QByteArray& key, const QString& destPath);
 
-    static bool restoreFromBackup(
+    static RestoreResult restoreFromBackup(
         const QString& backupPath,
         const QString& password,
         const QString& liveVaultPath,
         QString* errorOut = nullptr);
 
-    static bool restoreLegacyBackupInSession(
+    static RestoreResult restoreLegacyBackupInSession(
         const QString& backupPath,
         const QByteArray& sessionKey,
         const QString& liveVaultPath,
@@ -51,7 +57,7 @@ public:
     static bool validateVaultFile(const QString& path, QString* errorOut = nullptr);
 
 private:
-    static bool installValidatedPlaintextVault(
+    static RestoreResult installValidatedPlaintextVault(
         const QString& tempPath,
         const QString& liveVaultPath,
         QString* errorOut);

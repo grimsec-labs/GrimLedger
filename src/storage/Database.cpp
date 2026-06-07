@@ -25,15 +25,29 @@ bool Database::open(const QString& path) {
         return false;
     }
 
-    if (!execute(QStringLiteral("PRAGMA foreign_keys = ON;"))) {
+    auto pragmaOn = [this](const char* name) -> bool {
+        sqlite3_stmt* stmt = nullptr;
+        const QByteArray sql = QByteArray("PRAGMA ") + name + ';';
+        if (sqlite3_prepare_v2(m_db, sql.constData(), -1, &stmt, nullptr) != SQLITE_OK) {
+            return false;
+        }
+        bool ok = false;
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
+            ok = sqlite3_column_int(stmt, 0) != 0;
+        }
+        sqlite3_finalize(stmt);
+        return ok;
+    };
+
+    if (!execute(QStringLiteral("PRAGMA foreign_keys = ON;")) || !pragmaOn("foreign_keys")) {
         close();
         return false;
     }
-    if (!execute(QStringLiteral("PRAGMA secure_delete = ON;"))) {
+    if (!execute(QStringLiteral("PRAGMA secure_delete = ON;")) || !pragmaOn("secure_delete")) {
         close();
         return false;
     }
-    if (!execute(QStringLiteral("PRAGMA trusted_schema = OFF;"))) {
+    if (!execute(QStringLiteral("PRAGMA trusted_schema = OFF;")) || !pragmaOn("trusted_schema")) {
         close();
         return false;
     }
@@ -158,8 +172,32 @@ bool Database::initializeSchema() {
     }
 
     if (!hasAllowSubdomains) {
+        if (!execute(QStringLiteral(
+                "ALTER TABLE credentials ADD COLUMN allow_subdomains INTEGER NOT NULL DEFAULT 0;"))) {
+            return false;
+        }
+    }
+
+    bool hasEncryptedFillPolicy = false;
+    if (sqlite3_prepare_v2(
+            m_db,
+            "PRAGMA table_info(credentials);",
+            -1,
+            &pragmaStmt,
+            nullptr) == SQLITE_OK) {
+        while (sqlite3_step(pragmaStmt) == SQLITE_ROW) {
+            const char* name = reinterpret_cast<const char*>(sqlite3_column_text(pragmaStmt, 1));
+            if (name && qstrcmp(name, "encrypted_fill_policy") == 0) {
+                hasEncryptedFillPolicy = true;
+                break;
+            }
+        }
+        sqlite3_finalize(pragmaStmt);
+    }
+
+    if (!hasEncryptedFillPolicy) {
         return execute(QStringLiteral(
-            "ALTER TABLE credentials ADD COLUMN allow_subdomains INTEGER NOT NULL DEFAULT 0;"));
+            "ALTER TABLE credentials ADD COLUMN encrypted_fill_policy BLOB;"));
     }
 
     return true;

@@ -1,22 +1,29 @@
 function findLoginFields() {
-  const passwordInput = document.querySelector('input[type="password"]');
+  let passwordInput = document.querySelector('input[autocomplete="current-password"]');
+  if (!passwordInput) {
+    passwordInput = document.querySelector('input[type="password"]');
+  }
   if (!passwordInput) {
     return null;
   }
 
-  let usernameInput = null;
-  const form = passwordInput.closest("form");
-  const candidates = form
-    ? form.querySelectorAll('input[type="email"], input[type="text"], input:not([type])')
-    : document.querySelectorAll('input[type="email"], input[type="text"], input:not([type])');
+  let usernameInput = document.querySelector('input[autocomplete="username"]')
+    || document.querySelector('input[autocomplete="email"]');
 
-  for (const input of candidates) {
-    if (input === passwordInput) continue;
-    const type = (input.getAttribute("type") || "").toLowerCase();
-    if (type === "hidden" || type === "submit" || type === "button") continue;
-    if (input.autocomplete === "new-password") continue;
-    usernameInput = input;
-    break;
+  if (!usernameInput) {
+    const form = passwordInput.closest("form");
+    const candidates = form
+      ? form.querySelectorAll('input[type="email"], input[type="text"], input:not([type])')
+      : document.querySelectorAll('input[type="email"], input[type="text"], input:not([type])');
+
+    for (const input of candidates) {
+      if (input === passwordInput) continue;
+      const type = (input.getAttribute("type") || "").toLowerCase();
+      if (type === "hidden" || type === "submit" || type === "button") continue;
+      if (input.autocomplete === "new-password") continue;
+      usernameInput = input;
+      break;
+    }
   }
 
   return { usernameInput, passwordInput };

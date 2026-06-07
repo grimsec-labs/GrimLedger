@@ -13,5 +13,6 @@ struct Note {
     QDateTime createdAt;
     QDateTime updatedAt;
     bool isFavorite = false;
+    bool integrityError = false;
     QVector<QString> tags;
 };

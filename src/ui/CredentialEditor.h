@@ -21,6 +21,7 @@ public:
     QString url() const;
     QString notes() const;
     bool allowSubdomains() const;
+    bool integrityError() const;
 
     void setLabel(const QString& text);
     void setUsername(const QString& text);
@@ -51,4 +52,5 @@ private:
     QPushButton* m_saveButton = nullptr;
     QLabel* m_statusLabel = nullptr;
     QCheckBox* m_subdomainCheck = nullptr;
+    bool m_integrityError = false;
 };

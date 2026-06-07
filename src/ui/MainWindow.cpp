@@ -30,6 +30,8 @@
 #include "security/CryptoManager.h"
 #include "security/VaultSession.h"
 
+#include <QLocalSocket>
+
 #include <QSplitter>
 #include <QStackedWidget>
 #include <QHBoxLayout>
@@ -58,6 +60,7 @@ MainWindow::MainWindow(Database& db, VaultSession& session, QWidget* parent)
     m_notes = std::make_unique<NoteRepository>(m_db);
     m_credentials = std::make_unique<CredentialRepository>(m_db);
     m_vault = std::make_unique<VaultRepository>(m_db);
+    m_fillCoordinator = std::make_unique<BridgeFillCoordinator>(this);
     m_notes->ensureDefaultFolder();
     buildUi();
     loadNotes();
@@ -538,6 +541,9 @@ bool MainWindow::saveCurrentCredential(bool showErrorDialog) {
     if (m_section != SidebarSection::Passwords || m_currentCredentialId <= 0) {
         return true;
     }
+    if (m_credEditor->integrityError()) {
+        return true;
+    }
 
     Credential c;
     c.id = m_currentCredentialId;
@@ -1012,7 +1018,7 @@ void MainWindow::onRestoreVault(const QString& path) {
     f.close();
 
     QString error;
-    bool restored = false;
+    RestoreResult restoreResult = RestoreResult::Failed;
 
     if (magic == QByteArray("GRIMBKUP2", 9)) {
         bool ok = false;
@@ -1026,7 +1032,7 @@ void MainWindow::onRestoreVault(const QString& path) {
         }
 
         m_db.close();
-        restored = VaultRepository::restoreFromBackup(path, password, m_db.path(), &error);
+        restoreResult = VaultRepository::restoreFromBackup(path, password, m_db.path(), &error);
         if (!m_db.open(m_db.path())) {
             stopBridge();
             clearSensitiveUiState();
@@ -1046,7 +1052,7 @@ void MainWindow::onRestoreVault(const QString& path) {
         }
 
         m_db.close();
-        restored = VaultRepository::restoreLegacyBackupInSession(
+        restoreResult = VaultRepository::restoreLegacyBackupInSession(
             path, m_session.key(), m_db.path(), &error);
         if (!m_db.open(m_db.path())) {
             stopBridge();
@@ -1064,7 +1070,7 @@ void MainWindow::onRestoreVault(const QString& path) {
         return;
     }
 
-    if (!restored) {
+    if (restoreResult == RestoreResult::Failed) {
         DialogUtils::warning(this, QStringLiteral("Restore"),
             error.isEmpty()
                 ? QStringLiteral("Restore failed. Your original vault was not changed.")
@@ -1072,17 +1078,26 @@ void MainWindow::onRestoreVault(const QString& path) {
         return;
     }
 
+    finalizeVaultRestore(
+        restoreResult == RestoreResult::InstalledWithCleanupWarning,
+        error);
+}
+
+void MainWindow::finalizeVaultRestore(bool cleanupWarning, const QString& warningDetail) {
     stopBridge();
     closeNoteEditor();
     clearSensitiveUiState();
     m_cachedNotes.clear();
     m_preview->setMarkdown(QString(), imageResolver());
     m_session.lock();
-    DialogUtils::information(
-        this,
-        QStringLiteral("Restore"),
-        QStringLiteral(
-            "Vault restored from backup. Unlock with the password for this backup before editing."));
+
+    QString message = QStringLiteral(
+        "Vault restored from backup. Unlock with the password for this backup before editing.");
+    if (cleanupWarning && !warningDetail.isEmpty()) {
+        message += QStringLiteral("\n\n") + warningDetail;
+    }
+
+    DialogUtils::information(this, QStringLiteral("Restore"), message);
     emit vaultLocked();
 }
 
@@ -1253,26 +1268,32 @@ void MainWindow::startBridge() {
 
     m_bridge = std::make_unique<CredentialBridgeServer>(this);
     m_bridge->setRepository(m_credentials.get());
+    m_bridge->setFillCoordinator(m_fillCoordinator.get());
     m_bridge->setUnlockedChecker([this]() { return m_session.isUnlocked(); });
     m_bridge->setSessionKeyProvider([this]() { return m_session.key(); });
     m_bridge->setBridgeEnabledChecker([]() { return AppSettings::browserBridgeEnabled(); });
-    m_bridge->setConfirmFillHandler([this](
-            const QString& label,
-            const QString& origin,
-            std::function<void(bool approved)> callback) {
-        QTimer::singleShot(0, this, [this, label, origin, callback]() {
-            if (!m_session.isUnlocked()) {
-                callback(false);
-                return;
-            }
-            const bool approved = DialogUtils::question(
-                this,
-                QStringLiteral("Browser Fill"),
-                QStringLiteral("Allow browser extension to fill \"%1\" on %2?")
-                    .arg(label, origin));
-            callback(approved && m_session.isUnlocked());
-        });
-    });
+
+    connect(
+        m_fillCoordinator.get(),
+        &BridgeFillCoordinator::confirmationRequested,
+        this,
+        [this](const QString& label, const QString& origin, QLocalSocket* socket) {
+            QTimer::singleShot(0, this, [this, label, origin, socket]() {
+                if (!m_bridge || !m_session.isUnlocked()) {
+                    if (m_bridge) {
+                        m_bridge->completeFillDecision(socket, false);
+                    }
+                    return;
+                }
+                const bool approved = DialogUtils::question(
+                    this,
+                    QStringLiteral("Browser Fill"),
+                    QStringLiteral("Allow browser extension to fill \"%1\" on %2?")
+                        .arg(label, origin));
+                m_bridge->completeFillDecision(socket, approved && m_session.isUnlocked());
+            });
+        },
+        Qt::UniqueConnection);
     connect(m_bridge.get(), &CredentialBridgeServer::listenFailed, this, [this](const QString& reason) {
         if (m_bridgeLabel) {
             m_bridgeLabel->setText(QStringLiteral("Bridge: error"));
@@ -1300,9 +1321,13 @@ void MainWindow::stopBridge() {
         }
         return;
     }
+    if (m_fillCoordinator) {
+        m_fillCoordinator->cancelAll();
+    }
     m_bridge->cancelPendingRequests();
     m_bridge->stop();
     m_bridge.reset();
+    disconnect(m_fillCoordinator.get(), &BridgeFillCoordinator::confirmationRequested, this, nullptr);
     if (m_bridgeLabel) {
         m_bridgeLabel->setText(QStringLiteral("Bridge: off"));
     }
