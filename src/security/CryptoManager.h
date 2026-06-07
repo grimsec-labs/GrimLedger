@@ -139,8 +139,13 @@ public:
     static QByteArray credentialFieldAssociatedData(qint64 credentialId, const char* field);
 
     static QByteArray credentialFillPolicyAssociatedData(qint64 credentialId);
+    static QByteArray sealedBlockAssociatedData(qint64 noteId, const QString& blockId);
+    static QByteArray chronicleEntryAssociatedData(qint64 entryId);
+    static QByteArray grimShareAssociatedData(const QByteArray& header);
+    static QByteArray runbookSessionAssociatedData(qint64 sessionId);
 
     static QByteArray backupEnvelopeAssociatedData(const QByteArray& header);
+    static QByteArray deriveChamberKey(const QByteArray& masterKey, int chamberId);
 
 
 

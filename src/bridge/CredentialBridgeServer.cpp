@@ -1,8 +1,12 @@
 #include "bridge/CredentialBridgeServer.h"
 #include "bridge/BridgeAuth.h"
 #include "bridge/BridgeFillCoordinator.h"
+#include "bridge/BridgeClipCoordinator.h"
+#include "storage/NoteRepository.h"
+#include "models/Note.h"
 #include "bridge/OriginMatcher.h"
 #include "models/CredentialSummary.h"
+#include "models/FillTrustLevel.h"
 #include "storage/CredentialRepository.h"
 
 #include <QJsonArray>
@@ -56,8 +60,16 @@ void CredentialBridgeServer::setRepository(CredentialRepository* repository) {
     m_repository = repository;
 }
 
+void CredentialBridgeServer::setNoteRepository(NoteRepository* notes) {
+    m_notes = notes;
+}
+
 void CredentialBridgeServer::setFillCoordinator(BridgeFillCoordinator* coordinator) {
     m_fillCoordinator = coordinator;
+}
+
+void CredentialBridgeServer::setClipCoordinator(BridgeClipCoordinator* coordinator) {
+    m_clipCoordinator = coordinator;
 }
 
 void CredentialBridgeServer::setUnlockedChecker(IsUnlockedFn checker) {
@@ -70,6 +82,10 @@ void CredentialBridgeServer::setSessionKeyProvider(SessionKeyFn provider) {
 
 void CredentialBridgeServer::setBridgeEnabledChecker(BridgeEnabledFn checker) {
     m_bridgeEnabled = std::move(checker);
+}
+
+void CredentialBridgeServer::setClipEnabledChecker(ClipEnabledFn checker) {
+    m_clipEnabled = std::move(checker);
 }
 
 bool CredentialBridgeServer::start() {
@@ -92,6 +108,10 @@ bool CredentialBridgeServer::start() {
         return false;
     }
     return true;
+}
+
+bool CredentialBridgeServer::isListening() const {
+    return m_server && m_server->isListening();
 }
 
 void CredentialBridgeServer::stop() {
@@ -117,6 +137,9 @@ void CredentialBridgeServer::stop() {
 void CredentialBridgeServer::cancelPendingRequests() {
     if (m_fillCoordinator) {
         m_fillCoordinator->cancelAll();
+    }
+    if (m_clipCoordinator) {
+        m_clipCoordinator->cancelAll();
     }
     for (auto it = m_lineBuffers.begin(); it != m_lineBuffers.end(); ++it) {
         if (QLocalSocket* socket = it.key()) {
@@ -173,6 +196,9 @@ void CredentialBridgeServer::onClientDisconnected() {
     if (auto* client = qobject_cast<QLocalSocket*>(sender())) {
         if (m_fillCoordinator) {
             m_fillCoordinator->takePending(client);
+        }
+        if (m_clipCoordinator) {
+            m_clipCoordinator->takePending(client);
         }
         m_lineBuffers.remove(client);
         if (m_activeClients > 0) {
@@ -263,8 +289,11 @@ void CredentialBridgeServer::handleRequest(QLocalSocket* socket, const QByteArra
 
         QJsonArray matches;
         for (const CredentialSummary& cred : m_repository->listCredentialSummaries(key)) {
+            if (!fillTrustAllowsBridgeListing(cred.fillTrustLevel)) {
+                continue;
+            }
             if (!OriginMatcher::pageOriginMatchesCredentialUrl(
-                    origin, cred.url, cred.allowSubdomains)) {
+                    origin, cred.url, cred.fillTrustLevel)) {
                 continue;
             }
             QJsonObject item;
@@ -311,8 +340,12 @@ void CredentialBridgeServer::handleRequest(QLocalSocket* socket, const QByteArra
             writeResponse(socket, errorResponse(QStringLiteral("Credential integrity error.")));
             return;
         }
+        if (!fillTrustAllowsBridgeListing(cred->fillTrustLevel)) {
+            writeResponse(socket, errorResponse(QStringLiteral("Credential is manual-only.")));
+            return;
+        }
         if (!OriginMatcher::pageOriginMatchesCredentialUrl(
-                origin, cred->url, cred->allowSubdomains)) {
+                origin, cred->url, cred->fillTrustLevel)) {
             writeResponse(socket, errorResponse(QStringLiteral("Origin does not match credential URL.")));
             return;
         }
@@ -330,7 +363,84 @@ void CredentialBridgeServer::handleRequest(QLocalSocket* socket, const QByteArra
         return;
     }
 
+    if (action == QStringLiteral("clip")) {
+        if (!m_clipCoordinator || !m_notes) {
+            writeResponse(socket, errorResponse(QStringLiteral("Clip capture is not configured.")));
+            return;
+        }
+        if (!m_clipEnabled || !m_clipEnabled()) {
+            writeResponse(socket, errorResponse(QStringLiteral("Web clipper is disabled.")));
+            return;
+        }
+        if (m_clipCoordinator->hasPendingClip()) {
+            writeResponse(socket, errorResponse(QStringLiteral("Another clip is already pending.")));
+            return;
+        }
+
+        const QString title = req.value(QStringLiteral("title")).toString().left(200);
+        const QString url = req.value(QStringLiteral("url")).toString().left(2000);
+        const QString text = req.value(QStringLiteral("text")).toString().left(16 * 1024);
+        const QString origin = req.value(QStringLiteral("origin")).toString();
+        if (title.isEmpty() || text.isEmpty() || origin.isEmpty()) {
+            writeResponse(socket, errorResponse(QStringLiteral("Missing clip title, text, or origin.")));
+            return;
+        }
+
+        BridgeClipCoordinator::PendingClip pending;
+        pending.socket = socket;
+        pending.title = title;
+        pending.url = url;
+        pending.text = text;
+        pending.textPreview = text.left(240);
+        pending.origin = origin;
+        pending.lockGeneration = m_lockGeneration;
+        if (!m_clipCoordinator->beginClip(pending)) {
+            writeResponse(socket, errorResponse(QStringLiteral("Could not start clip confirmation.")));
+        }
+        return;
+    }
+
     writeResponse(socket, errorResponse(QStringLiteral("Unknown action.")));
+}
+
+void CredentialBridgeServer::completeClipDecision(QLocalSocket* socket, bool approved, qint64 folderId) {
+    if (!m_clipCoordinator || !m_notes || !m_sessionKey) {
+        return;
+    }
+    const auto pendingOpt = m_clipCoordinator->takePending(socket);
+    if (!pendingOpt) {
+        return;
+    }
+    const BridgeClipCoordinator::PendingClip pending = *pendingOpt;
+    if (!socket || socket->state() != QLocalSocket::ConnectedState) {
+        return;
+    }
+    if (pending.lockGeneration != m_lockGeneration || !approved) {
+        writeResponse(socket, errorResponse(QStringLiteral("Clip denied or vault locked.")));
+        return;
+    }
+
+    const QByteArray key = m_sessionKey();
+    if (key.isEmpty()) {
+        writeResponse(socket, errorResponse(QStringLiteral("Vault is locked.")));
+        return;
+    }
+
+    Note note;
+    note.title = pending.title;
+    note.body = QStringLiteral("# %1\n\nSource: %2\n\n%3")
+        .arg(pending.title, pending.url, pending.text);
+    note.folderId = folderId > 0 ? folderId : m_notes->defaultFolderId();
+    const qint64 noteId = m_notes->createNote(note, key);
+    if (noteId <= 0) {
+        writeResponse(socket, errorResponse(QStringLiteral("Could not save clipped note.")));
+        return;
+    }
+
+    QJsonObject resp;
+    resp.insert(QStringLiteral("ok"), true);
+    resp.insert(QStringLiteral("noteId"), static_cast<double>(noteId));
+    writeResponse(socket, resp);
 }
 
 void CredentialBridgeServer::completeFillDecision(QLocalSocket* socket, bool approved) {
@@ -371,7 +481,7 @@ void CredentialBridgeServer::completeFillDecision(QLocalSocket* socket, bool app
         return;
     }
     if (!OriginMatcher::pageOriginMatchesCredentialUrl(
-            pending.origin, cred->url, cred->allowSubdomains)) {
+            pending.origin, cred->url, cred->fillTrustLevel)) {
         writeResponse(socket, errorResponse(QStringLiteral("Origin no longer matches.")));
         return;
     }
@@ -380,6 +490,10 @@ void CredentialBridgeServer::completeFillDecision(QLocalSocket* socket, bool app
     resp.insert(QStringLiteral("ok"), true);
     resp.insert(QStringLiteral("nonce"), pending.nonce);
     resp.insert(QStringLiteral("username"), cred->username);
-    resp.insert(QStringLiteral("password"), cred->password);
+    if (fillTrustSendsPassword(cred->fillTrustLevel)) {
+        resp.insert(QStringLiteral("password"), cred->password);
+    } else {
+        resp.insert(QStringLiteral("password"), QString());
+    }
     writeResponse(socket, resp);
 }

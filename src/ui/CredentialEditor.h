@@ -1,5 +1,7 @@
 #pragma once
 
+#include "models/FillTrustLevel.h"
+
 #include <QWidget>
 #include <QDateTime>
 
@@ -7,7 +9,8 @@ class QLineEdit;
 class QPlainTextEdit;
 class QPushButton;
 class QLabel;
-class QCheckBox;
+class QComboBox;
+class QTimer;
 
 class CredentialEditor : public QWidget {
     Q_OBJECT
@@ -20,7 +23,8 @@ public:
     QString password() const;
     QString url() const;
     QString notes() const;
-    bool allowSubdomains() const;
+    QString totpSecret() const;
+    FillTrustLevel fillTrustLevel() const;
     bool integrityError() const;
 
     void setLabel(const QString& text);
@@ -28,7 +32,8 @@ public:
     void setPassword(const QString& text);
     void setUrl(const QString& text);
     void setNotes(const QString& text);
-    void setAllowSubdomains(bool enabled);
+    void setTotpSecret(const QString& text);
+    void setFillTrustLevel(FillTrustLevel level);
     void setIntegrityError(bool errored);
     void setSavedState(bool saved, const QDateTime& updatedAt = QDateTime());
     void clearFields();
@@ -40,17 +45,23 @@ signals:
     void generatePasswordRequested();
     void copyPasswordRequested();
     void copyUsernameRequested();
+    void copyTotpRequested();
+    void checkBreachRequested();
 
 private:
     void buildUi();
+    void refreshTotpCode();
 
     QLineEdit* m_labelEdit = nullptr;
     QLineEdit* m_userEdit = nullptr;
     QLineEdit* m_passEdit = nullptr;
     QLineEdit* m_urlEdit = nullptr;
+    QLineEdit* m_totpEdit = nullptr;
+    QLabel* m_totpCodeLabel = nullptr;
     QPlainTextEdit* m_notesEdit = nullptr;
     QPushButton* m_saveButton = nullptr;
     QLabel* m_statusLabel = nullptr;
-    QCheckBox* m_subdomainCheck = nullptr;
+    QComboBox* m_trustCombo = nullptr;
+    QTimer* m_totpTimer = nullptr;
     bool m_integrityError = false;
 };

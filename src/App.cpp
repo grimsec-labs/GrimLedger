@@ -7,6 +7,7 @@
 #include "security/CryptoManager.h"
 #include "utils/DialogUtils.h"
 #include "utils/AppSettings.h"
+#include "security/WindowsHelloUnlock.h"
 
 #include <QFile>
 
@@ -39,6 +40,7 @@ void App::showLogin() {
     if (!m_login) {
         m_login = new LoginWindow();
         connect(m_login, &LoginWindow::unlockRequested, this, &App::onUnlockRequested);
+        connect(m_login, &LoginWindow::helloUnlockRequested, this, &App::onHelloUnlockRequested);
         connect(m_login, &LoginWindow::createVaultRequested, this, &App::onCreateVaultRequested);
     }
 
@@ -67,6 +69,34 @@ void App::showMain() {
     if (m_login) {
         m_login->hide();
     }
+}
+
+void App::onHelloUnlockRequested() {
+    QByteArray key;
+    if (!WindowsHelloUnlock::tryUnlock(key)) {
+        if (m_login) {
+            m_login->showError(WindowsHelloUnlock::lastError());
+        }
+        return;
+    }
+
+    if (!m_vault->unlockWithDerivedKey(key)) {
+        WindowsHelloUnlock::disable();
+        CryptoManager::secureZero(key);
+        if (m_login) {
+            m_login->showError(
+                QStringLiteral("Stored Hello unlock is no longer valid. Use your master password."));
+        }
+        return;
+    }
+
+    AppSettings::resetFailedUnlockAttempts();
+    m_session->setKey(std::move(key));
+    if (m_login) {
+        m_login->clearPassword();
+    }
+    showMain();
+    m_main->onVaultUnlocked();
 }
 
 void App::onUnlockRequested(const QString& password) {

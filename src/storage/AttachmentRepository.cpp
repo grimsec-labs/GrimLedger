@@ -4,6 +4,7 @@
 #include "utils/SecurityLimits.h"
 #include "utils/TimeUtils.h"
 
+#include <QCryptographicHash>
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
@@ -70,9 +71,13 @@ QString AttachmentRepository::storeAttachment(
     const qint64 now = TimeUtils::toUnix(QDateTime::currentDateTimeUtc());
 
     sqlite3_stmt* stmt = nullptr;
+    const QString sha256 = QString::fromLatin1(
+        QCryptographicHash::hash(imageData, QCryptographicHash::Sha256).toHex());
+
     const char* sql =
-        "INSERT INTO note_attachments (id, note_id, encrypted_data, mime_type, original_name, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?);";
+        "INSERT INTO note_attachments "
+        "(id, note_id, encrypted_data, mime_type, original_name, created_at, sha256_hex, is_evidence) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, 0);";
 
     if (sqlite3_prepare_v2(m_db.handle(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
         return QString();
@@ -84,6 +89,8 @@ QString AttachmentRepository::storeAttachment(
     sqlite3_bind_text(stmt, 4, mimeType.toUtf8().constData(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 5, originalName.toUtf8().constData(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_int64(stmt, 6, now);
+    const QByteArray shaUtf8 = sha256.toUtf8();
+    sqlite3_bind_text(stmt, 7, shaUtf8.constData(), shaUtf8.size(), SQLITE_TRANSIENT);
 
     const bool ok = sqlite3_step(stmt) == SQLITE_DONE;
     sqlite3_finalize(stmt);

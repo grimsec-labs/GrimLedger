@@ -25,13 +25,18 @@ int main() {
         check(!OriginMatcher::pageOriginMatchesCredentialUrl(
                   QStringLiteral("https://app.example.com"),
                   QStringLiteral("https://example.com"),
-                  false),
+                  FillTrustLevel::ExactOrigin),
             "subdomain rejected by default");
         check(OriginMatcher::pageOriginMatchesCredentialUrl(
                   QStringLiteral("https://app.example.com"),
                   QStringLiteral("https://example.com"),
-                  true),
+                  FillTrustLevel::AllowSubdomains),
             "subdomain allowed when enabled");
+        check(!OriginMatcher::pageOriginMatchesCredentialUrl(
+                  QStringLiteral("https://example.com"),
+                  QStringLiteral("https://example.com"),
+                  FillTrustLevel::ManualOnly),
+            "manual-only never matches");
         check(!OriginMatcher::pageOriginMatchesCredentialUrl(
                   QStringLiteral("https://example.com:8443"),
                   QStringLiteral("https://example.com")),

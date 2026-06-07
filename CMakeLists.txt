@@ -72,6 +72,25 @@ set(SOURCES
     src/ui/CredentialEditor.cpp
     src/ui/MarkdownPreview.cpp
     src/ui/SettingsWindow.cpp
+    src/models/FillTrustLevel.cpp
+    src/utils/TotpGenerator.cpp
+    src/utils/VaultHealth.cpp
+    src/import/CredentialImport.cpp
+    src/security/BreachCheck.cpp
+    src/security/WindowsHelloUnlock.cpp
+    src/models/ChamberId.cpp
+    src/security/ChamberManager.cpp
+    src/security/SecurityChronicle.cpp
+    src/security/SecretScanner.cpp
+    src/security/RedactionStudio.cpp
+    src/storage/SealedBlockRepository.cpp
+    src/share/GrimShare.cpp
+    src/markdown/DiagramRenderer.cpp
+    src/search/SemanticSearch.cpp
+    src/graph/KnowledgeGraph.cpp
+    src/runbook/RunbookParser.cpp
+    src/runbook/RunbookSessionRepository.cpp
+    src/bridge/BridgeClipCoordinator.cpp
     src/ui/CustomTitleBar.cpp
     src/ui/FramelessResize.cpp
     src/ui/FolderPickerDialog.cpp
@@ -135,6 +154,12 @@ set(HEADERS
     src/storage/VaultRepository.h
     src/models/Note.h
     src/models/Credential.h
+    src/models/FillTrustLevel.h
+    src/import/CredentialImport.h
+    src/utils/TotpGenerator.h
+    src/utils/VaultHealth.h
+    src/security/BreachCheck.h
+    src/security/WindowsHelloUnlock.h
     src/models/Folder.h
     src/models/Tag.h
     src/search/SearchEngine.h
@@ -197,6 +222,7 @@ endif()
 enable_testing()
 
 set(GRIMLEDGER_STORAGE_TEST_SOURCES
+    src/models/FillTrustLevel.cpp
     src/storage/Database.cpp
     src/storage/DbTransaction.cpp
     src/storage/CredentialRepository.cpp
@@ -214,7 +240,7 @@ function(add_grimledger_test name)
     set_target_properties(${name} PROPERTIES AUTOMOC OFF AUTOUIC OFF AUTORCC OFF)
     target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     if(${name} STREQUAL "test_origin_matcher")
-        target_sources(${name} PRIVATE src/bridge/OriginMatcher.cpp)
+        target_sources(${name} PRIVATE src/bridge/OriginMatcher.cpp src/models/FillTrustLevel.cpp)
         target_link_libraries(${name} PRIVATE Qt6::Core)
     elseif(${name} STREQUAL "test_sqlite_utils")
         target_sources(${name} PRIVATE src/utils/SqliteUtils.cpp)
@@ -234,6 +260,17 @@ function(add_grimledger_test name)
     elseif(${name} STREQUAL "test_vault_restore")
         target_sources(${name} PRIVATE ${GRIMLEDGER_STORAGE_TEST_SOURCES})
         target_link_libraries(${name} PRIVATE Qt6::Core sqlite3_static sodium)
+    elseif(${name} STREQUAL "test_totp_generator")
+        target_sources(${name} PRIVATE src/utils/TotpGenerator.cpp)
+        target_link_libraries(${name} PRIVATE Qt6::Core sodium)
+    elseif(${name} STREQUAL "test_stage_b")
+        target_sources(${name} PRIVATE
+            src/security/SecretScanner.cpp
+            src/share/GrimShare.cpp
+            src/runbook/RunbookParser.cpp
+            src/security/CryptoManager.cpp
+            src/security/PasswordManager.cpp)
+        target_link_libraries(${name} PRIVATE Qt6::Core sodium)
     endif()
     add_test(NAME ${name} COMMAND ${name})
 endfunction()
@@ -245,9 +282,12 @@ add_grimledger_test(test_bridge_server)
 add_grimledger_test(test_credential_repository)
 add_grimledger_test(test_note_repository)
 add_grimledger_test(test_vault_restore)
+add_grimledger_test(test_totp_generator)
+add_grimledger_test(test_stage_b)
 
 if(WIN32)
     set_target_properties(GrimLedger PROPERTIES WIN32_EXECUTABLE TRUE)
+    target_link_libraries(GrimLedger PRIVATE crypt32)
 endif()
 
 install(TARGETS GrimLedger RUNTIME DESTINATION bin)

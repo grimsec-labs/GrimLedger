@@ -82,6 +82,31 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
+  if (message.action === "clip_to_grimledger") {
+    chrome.tabs.sendMessage(message.tabId, { action: "get_clip_payload" })
+      .then((clip) => {
+        if (!clip || !clip.ok) {
+          throw new Error("Select text on the page before clipping.");
+        }
+        return nativeRequest({
+          action: "clip",
+          title: clip.title,
+          url: clip.url,
+          text: clip.text,
+          origin: clip.origin,
+        });
+      })
+      .then((response) => {
+        if (response && response.ok === false) {
+          sendResponse({ ok: false, error: response.error || "Clip failed" });
+          return;
+        }
+        sendResponse({ ok: true, response });
+      })
+      .catch((error) => sendResponse({ ok: false, error: error.message || String(error) }));
+    return true;
+  }
+
   if (message.action === "fill_credentials") {
     fillCredentials(message.id, message.origin, message.tabId)
       .then((result) => sendResponse(result))

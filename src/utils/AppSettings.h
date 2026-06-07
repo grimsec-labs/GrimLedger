@@ -1,5 +1,7 @@
 #pragma once
 
+#include <QDateTime>
+
 class AppSettings {
 public:
     static constexpr int kMaxFailedUnlockAttempts = 3;
@@ -18,4 +20,16 @@ public:
     static void setAutoLockEnabled(bool enabled);
     static int autoLockMinutes();
     static void setAutoLockMinutes(int minutes);
+
+    static bool hibpCheckEnabled();
+    static void setHibpCheckEnabled(bool enabled);
+
+    static QDateTime lastEncryptedBackupTime();
+    static void setLastEncryptedBackupTime(const QDateTime& when);
+
+    static bool webClipperEnabled();
+    static void setWebClipperEnabled(bool enabled);
+
+    static bool semanticSearchEnabled();
+    static void setSemanticSearchEnabled(bool enabled);
 };

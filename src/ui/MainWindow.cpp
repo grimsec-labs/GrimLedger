@@ -29,6 +29,22 @@
 #include "ui/GrimFileDialog.h"
 #include "security/CryptoManager.h"
 #include "security/VaultSession.h"
+#include "security/BreachCheck.h"
+#include "security/WindowsHelloUnlock.h"
+#include "import/CredentialImport.h"
+#include "utils/TotpGenerator.h"
+#include "utils/VaultHealth.h"
+#include "storage/SealedBlockRepository.h"
+#include "security/SecurityChronicle.h"
+#include "security/SecretScanner.h"
+#include "security/RedactionStudio.h"
+#include "security/ChamberManager.h"
+#include "models/ChamberId.h"
+#include "runbook/RunbookParser.h"
+#include "runbook/RunbookSessionRepository.h"
+#include "graph/KnowledgeGraph.h"
+#include "share/GrimShare.h"
+#include "search/SemanticSearch.h"
 
 #include <QLocalSocket>
 
@@ -61,6 +77,10 @@ MainWindow::MainWindow(Database& db, VaultSession& session, QWidget* parent)
     m_credentials = std::make_unique<CredentialRepository>(m_db);
     m_vault = std::make_unique<VaultRepository>(m_db);
     m_fillCoordinator = std::make_unique<BridgeFillCoordinator>(this);
+    m_clipCoordinator = std::make_unique<BridgeClipCoordinator>(this);
+    m_sealedBlocks = std::make_unique<SealedBlockRepository>(m_db);
+    m_chronicle = std::make_unique<SecurityChronicle>(m_db);
+    m_runbooks = std::make_unique<RunbookSessionRepository>(m_db);
     m_notes->ensureDefaultFolder();
     buildUi();
     loadNotes();
@@ -211,6 +231,10 @@ void MainWindow::buildUi() {
             this, &MainWindow::onCopyCredentialPassword);
     connect(m_credEditor, &CredentialEditor::copyUsernameRequested,
             this, &MainWindow::onCopyCredentialUsername);
+    connect(m_credEditor, &CredentialEditor::copyTotpRequested,
+            this, &MainWindow::onCopyCredentialTotp);
+    connect(m_credEditor, &CredentialEditor::checkBreachRequested,
+            this, &MainWindow::onCheckCredentialBreach);
 
     m_credList = new CredentialList(this);
     connect(m_credList, &CredentialList::credentialSelected, this, &MainWindow::onCredentialSelected);
@@ -265,6 +289,23 @@ void MainWindow::buildUi() {
     connect(m_settingsPanel, &SettingsWindow::exportAllMarkdownRequested, this, &MainWindow::onExportAllMarkdown);
     connect(m_settingsPanel, &SettingsWindow::exportEncryptedArchiveRequested,
             this, &MainWindow::onExportEncryptedArchive);
+    connect(m_settingsPanel, &SettingsWindow::importCredentialsRequested,
+            this, &MainWindow::onImportCredentials);
+    connect(m_settingsPanel, &SettingsWindow::refreshHealthRequested,
+            this, &MainWindow::refreshVaultHealth);
+    connect(m_settingsPanel, &SettingsWindow::enableHelloUnlockRequested,
+            this, &MainWindow::onEnableHelloUnlock);
+    connect(m_settingsPanel, &SettingsWindow::disableHelloUnlockRequested,
+            this, &MainWindow::onDisableHelloUnlock);
+    connect(m_settingsPanel, &SettingsWindow::scanSecretsRequested, this, &MainWindow::onScanSecrets);
+    connect(m_settingsPanel, &SettingsWindow::redactExportRequested, this, &MainWindow::onRedactExport);
+    connect(m_settingsPanel, &SettingsWindow::startRunbookRequested, this, &MainWindow::onStartRunbook);
+    connect(m_settingsPanel, &SettingsWindow::showKnowledgeGraphRequested, this, &MainWindow::onShowKnowledgeGraph);
+    connect(m_settingsPanel, &SettingsWindow::showChronicleRequested, this, &MainWindow::onShowChronicle);
+    connect(m_settingsPanel, &SettingsWindow::exportGrimShareRequested, this, &MainWindow::onExportGrimShare);
+    connect(m_settingsPanel, &SettingsWindow::importGrimShareRequested, this, &MainWindow::onImportGrimShare);
+    connect(m_settingsPanel, &SettingsWindow::lockWorkChamberRequested, this, &MainWindow::onLockWorkChamber);
+    connect(m_settingsPanel, &SettingsWindow::unlockWorkChamberRequested, this, &MainWindow::onUnlockWorkChamber);
 
     auto* rightStack = new QVBoxLayout();
     rightStack->setContentsMargins(0, 0, 0, 0);
@@ -382,17 +423,30 @@ void MainWindow::loadNotes() {
         for (const Note& n : m_cachedNotes) {
             const auto full = m_notes->getNote(n.id, key);
             if (full) {
-                bodies.insert(n.id, full->body);
+                bodies.insert(
+                    n.id,
+                    m_sealedBlocks->strippedBodyForSearch(n.id, full->body));
             }
         }
-        const auto matches = SearchEngine::search(m_cachedNotes, m_searchQuery, true, bodies);
         QVector<Note> filtered;
-        for (const SearchMatch& m : matches) {
-            Note copy = m.note;
-            if (bodies.contains(copy.id)) {
-                copy.body = bodies[copy.id];
+        if (AppSettings::semanticSearchEnabled()) {
+            const auto matches = SemanticSearch::search(m_cachedNotes, bodies, m_searchQuery);
+            for (const SemanticMatch& match : matches) {
+                Note copy = match.note;
+                if (bodies.contains(copy.id)) {
+                    copy.body = bodies[copy.id];
+                }
+                filtered.append(copy);
             }
-            filtered.append(copy);
+        } else {
+            const auto matches = SearchEngine::search(m_cachedNotes, m_searchQuery, true, bodies);
+            for (const SearchMatch& m : matches) {
+                Note copy = m.note;
+                if (bodies.contains(copy.id)) {
+                    copy.body = bodies[copy.id];
+                }
+                filtered.append(copy);
+            }
         }
         m_noteList->setNotes(filtered);
     } else {
@@ -521,7 +575,8 @@ void MainWindow::loadCredential(qint64 id) {
     m_credEditor->setPassword(cred->password);
     m_credEditor->setUrl(cred->url);
     m_credEditor->setNotes(cred->notes);
-    m_credEditor->setAllowSubdomains(cred->allowSubdomains);
+    m_credEditor->setTotpSecret(cred->totpSecret);
+    m_credEditor->setFillTrustLevel(cred->fillTrustLevel);
     m_credEditor->setSavedState(true, cred->updatedAt);
     m_session.resetActivityTimer();
 }
@@ -541,7 +596,8 @@ bool MainWindow::saveCurrentCredential(bool showErrorDialog) {
     c.password = m_credEditor->password();
     c.url = m_credEditor->url();
     c.notes = m_credEditor->notes();
-    c.allowSubdomains = m_credEditor->allowSubdomains();
+    c.totpSecret = m_credEditor->totpSecret();
+    c.fillTrustLevel = m_credEditor->fillTrustLevel();
 
     if (c.label.isEmpty()) {
         if (showErrorDialog) {
@@ -664,6 +720,440 @@ void MainWindow::onCopyCredentialUsername() {
         QStringLiteral("Username copied. Clipboard clears in 20 seconds."));
 }
 
+void MainWindow::onCopyCredentialTotp() {
+    const QString secret = m_credEditor->totpSecret();
+    if (!TotpGenerator::isValidSecret(secret)) {
+        DialogUtils::warning(
+            this,
+            QStringLiteral("TOTP"),
+            QStringLiteral("Enter a valid base32 TOTP secret first."));
+        return;
+    }
+    const QString code = TotpGenerator::currentCode(secret);
+    ClipboardUtils::copyTextWithAutoClear(code);
+    DialogUtils::information(
+        this,
+        QStringLiteral("Copied"),
+        QStringLiteral("TOTP code copied. Clipboard clears in 20 seconds."));
+}
+
+void MainWindow::onCheckCredentialBreach() {
+    if (!BreachCheck::isEnabled()) {
+        DialogUtils::information(
+            this,
+            QStringLiteral("Breach Check"),
+            QStringLiteral("Enable Have I Been Pwned checks in Vault Settings first."));
+        return;
+    }
+    const QString pass = m_credEditor->password();
+    if (pass.isEmpty()) {
+        return;
+    }
+    const BreachCheck::Result result = BreachCheck::checkPassword(pass);
+    if (!result.ok) {
+        DialogUtils::warning(this, QStringLiteral("Breach Check"), result.error);
+        return;
+    }
+    if (result.breached) {
+        DialogUtils::warning(
+            this,
+            QStringLiteral("Breach Check"),
+            QStringLiteral("This password appears in known breach data (%1 exposures).")
+                .arg(result.count));
+    } else {
+        DialogUtils::information(
+            this,
+            QStringLiteral("Breach Check"),
+            QStringLiteral("No known breach matches for this password."));
+    }
+}
+
+void MainWindow::onImportCredentials() {
+    const QString path = GrimFileDialog::getOpenFileName(
+        this,
+        QStringLiteral("Import Credentials"),
+        QString(),
+        QStringLiteral("Imports (*.csv *.xml);;Bitwarden CSV (*.csv);;KeePass XML (*.xml)"));
+    if (path.isEmpty()) {
+        return;
+    }
+
+    if (!DialogUtils::question(
+            this,
+            QStringLiteral("Import Credentials"),
+            QStringLiteral("Imported data is plaintext in memory during import. Continue?"))) {
+        return;
+    }
+
+    ImportParseResult parsed;
+    if (path.endsWith(QStringLiteral(".xml"), Qt::CaseInsensitive)) {
+        parsed = CredentialImport::parseKeePassXml(path);
+    } else {
+        parsed = CredentialImport::parseBitwardenCsv(path);
+    }
+
+    if (!parsed.ok) {
+        DialogUtils::warning(this, QStringLiteral("Import"), parsed.error);
+        return;
+    }
+
+    QVector<Credential> creds;
+    creds.reserve(parsed.items.size());
+    for (const ImportedCredential& item : parsed.items) {
+        creds.append(item.credential);
+    }
+
+    int imported = 0;
+    if (!m_credentials->importCredentials(creds, m_session.key(), &imported)) {
+        DialogUtils::warning(
+            this,
+            QStringLiteral("Import"),
+            QStringLiteral("Import failed. No credentials were added."));
+        return;
+    }
+
+    loadCredentials();
+    DialogUtils::information(
+        this,
+        QStringLiteral("Import"),
+        QStringLiteral("Imported %1 credentials.").arg(imported));
+}
+
+void MainWindow::refreshVaultHealth() {
+    int noteIntegrityErrors = 0;
+    const QVector<Note> notes = m_notes->listNotes(m_session.key());
+    for (const Note& note : notes) {
+        if (note.integrityError) {
+            ++noteIntegrityErrors;
+        }
+    }
+
+    const VaultHealthReport report = VaultHealth::collect(
+        m_db.path(),
+        m_credentials->listCredentialSummaries(m_session.key()).size(),
+        m_credentials->countCredentialIntegrityErrors(m_session.key()),
+        notes.size(),
+        noteIntegrityErrors,
+        0,
+        AppSettings::browserBridgeEnabled(),
+        m_bridge && m_bridge->isListening(),
+        !m_session.isUnlocked());
+    m_settingsPanel->setVaultHealthReport(report);
+}
+
+void MainWindow::onEnableHelloUnlock() {
+    if (!WindowsHelloUnlock::isPlatformSupported()) {
+        return;
+    }
+    bool ok = false;
+    const QString password = GrimInputDialog::getPassword(
+        this,
+        QStringLiteral("Enable Windows Hello"),
+        QStringLiteral("Re-enter your master password to enable convenience unlock:"),
+        &ok);
+    if (!ok || password.isEmpty()) {
+        return;
+    }
+
+    QByteArray verifyKey;
+    if (!m_vault->unlockVault(password, verifyKey)) {
+        DialogUtils::warning(
+            this,
+            QStringLiteral("Windows Hello"),
+            QStringLiteral("Master password verification failed."));
+        return;
+    }
+
+    if (!WindowsHelloUnlock::enable(verifyKey, password)) {
+        CryptoManager::secureZero(verifyKey);
+        DialogUtils::warning(
+            this,
+            QStringLiteral("Windows Hello"),
+            WindowsHelloUnlock::lastError());
+        return;
+    }
+    CryptoManager::secureZero(verifyKey);
+
+    DialogUtils::information(
+        this,
+        QStringLiteral("Windows Hello"),
+        QStringLiteral("Convenience unlock enabled. Master password fallback remains available."));
+}
+
+void MainWindow::onDisableHelloUnlock() {
+    WindowsHelloUnlock::disable();
+    DialogUtils::information(
+        this,
+        QStringLiteral("Windows Hello"),
+        QStringLiteral("Convenience unlock disabled."));
+}
+
+void MainWindow::onScanSecrets() {
+    int totalFindings = 0;
+    const QByteArray key = m_session.key();
+    for (const Note& summary : m_cachedNotes) {
+        const auto note = m_notes->getNote(summary.id, key);
+        if (!note) {
+            continue;
+        }
+        const QString body = m_sealedBlocks->strippedBodyForSearch(note->id, note->body);
+        totalFindings += SecretScanner::scanText(note->title + QLatin1Char('\n') + body).size();
+    }
+    DialogUtils::information(
+        this,
+        QStringLiteral("Secret Scanner"),
+        totalFindings > 0
+            ? QStringLiteral("Found %1 potential secret(s). Review notes and migrate to vault keys or sealed blocks.")
+                .arg(totalFindings)
+            : QStringLiteral("No likely secrets detected in unlocked notes."));
+}
+
+void MainWindow::onRedactExport() {
+    if (m_currentNoteId <= 0) {
+        DialogUtils::warning(this, QStringLiteral("Redaction"), QStringLiteral("Open a note first."));
+        return;
+    }
+    const auto note = m_notes->getNote(m_currentNoteId, m_session.key());
+    if (!note) {
+        return;
+    }
+    const QString stripped = m_sealedBlocks->strippedBodyForExport(note->id, note->body);
+    const QVector<RedactionHit> hits = RedactionStudio::detectHits(note->title + QLatin1Char('\n') + stripped);
+    const QString redacted = RedactionStudio::applyRedactions(
+        note->title + QStringLiteral("\n\n") + stripped, hits);
+    const QString path = GrimFileDialog::getSaveFileName(
+        this,
+        QStringLiteral("Redacted Export"),
+        QStringLiteral("redacted-note.md"),
+        QStringLiteral("Markdown (*.md)"));
+    if (path.isEmpty()) {
+        return;
+    }
+    QFile out(path);
+    if (!out.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        DialogUtils::warning(this, QStringLiteral("Redaction"), QStringLiteral("Could not write file."));
+        return;
+    }
+    out.write(redacted.toUtf8());
+    if (m_chronicle) {
+        m_chronicle->appendEvent(
+            QStringLiteral("redacted_export"),
+            QStringLiteral("Redacted export of note %1").arg(note->title),
+            m_session.key());
+    }
+    DialogUtils::information(
+        this,
+        QStringLiteral("Redaction"),
+        QStringLiteral("Redacted copy saved. Automatic redaction is not complete — review before sharing."));
+}
+
+void MainWindow::onStartRunbook() {
+    if (m_currentNoteId <= 0) {
+        DialogUtils::warning(this, QStringLiteral("Runbook"), QStringLiteral("Open a runbook note first."));
+        return;
+    }
+    const auto note = m_notes->getNote(m_currentNoteId, m_session.key());
+    if (!note || !RunbookParser::isRunbookNote(note->body)) {
+        DialogUtils::warning(
+            this,
+            QStringLiteral("Runbook"),
+            QStringLiteral("Current note has no checklist steps. Add `- [ ]` tasks or numbered steps."));
+        return;
+    }
+    const QVector<RunbookStep> steps = RunbookParser::parseSteps(note->body);
+    const qint64 sessionId = m_runbooks->createSession(note->id, steps.size(), m_session.key());
+    if (sessionId <= 0) {
+        DialogUtils::warning(this, QStringLiteral("Runbook"), QStringLiteral("Could not start session."));
+        return;
+    }
+    DialogUtils::information(
+        this,
+        QStringLiteral("Runbook"),
+        QStringLiteral("Runbook session started (%1 steps). Session id: %2")
+            .arg(steps.size())
+            .arg(sessionId));
+}
+
+void MainWindow::onShowKnowledgeGraph() {
+    QHash<qint64, QString> bodies;
+    const QByteArray key = m_session.key();
+    for (const Note& n : m_cachedNotes) {
+        if (const auto note = m_notes->getNote(n.id, key)) {
+            bodies.insert(n.id, note->body);
+        }
+    }
+    const KnowledgeGraphModel model = KnowledgeGraph::buildFromNotes(m_cachedNotes, bodies);
+    const QString dot = KnowledgeGraph::toDot(model);
+    const QString path = GrimFileDialog::getSaveFileName(
+        this,
+        QStringLiteral("Knowledge Graph"),
+        QStringLiteral("grimledger-graph.dot"),
+        QStringLiteral("Graphviz DOT (*.dot)"));
+    if (path.isEmpty()) {
+        return;
+    }
+    QFile out(path);
+    if (out.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        out.write(dot.toUtf8());
+    }
+    DialogUtils::information(
+        this,
+        QStringLiteral("Knowledge Graph"),
+        QStringLiteral("Exported %1 nodes and %2 edges to DOT.")
+            .arg(model.nodes.size())
+            .arg(model.edges.size()));
+}
+
+void MainWindow::onShowChronicle() {
+    const QVector<ChronicleEntry> entries = m_chronicle->listEntries(m_session.key(), 50);
+    QString text;
+    for (const ChronicleEntry& entry : entries) {
+        text += QStringLiteral("[%1] %2 — %3\n")
+            .arg(entry.createdAt.toString(Qt::ISODate), entry.eventType, entry.summary);
+    }
+    if (text.isEmpty()) {
+        text = QStringLiteral("No security events recorded yet.");
+    }
+    const bool chainOk = m_chronicle->verifyChain(m_session.key());
+    text += QStringLiteral("\nChain integrity: %1")
+        .arg(chainOk ? QStringLiteral("OK") : QStringLiteral("CHECK FAILED"));
+    DialogUtils::information(this, QStringLiteral("Grim Chronicle"), text);
+}
+
+void MainWindow::onExportGrimShare() {
+    if (m_currentNoteId <= 0) {
+        DialogUtils::warning(this, QStringLiteral("GrimShare"), QStringLiteral("Open a note to export."));
+        return;
+    }
+    const auto note = m_notes->getNote(m_currentNoteId, m_session.key());
+    if (!note) {
+        return;
+    }
+    bool ok = false;
+    const QString passphrase = GrimInputDialog::getPassword(
+        this,
+        QStringLiteral("GrimShare"),
+        QStringLiteral("One-time passphrase for this package:"),
+        &ok);
+    if (!ok || passphrase.isEmpty()) {
+        return;
+    }
+    const QString path = GrimFileDialog::getSaveFileName(
+        this,
+        QStringLiteral("Export GrimShare"),
+        QStringLiteral("share.grimshare"),
+        QStringLiteral("GrimShare (*.grimshare)"));
+    if (path.isEmpty()) {
+        return;
+    }
+    GrimShareNotePayload payload;
+    payload.title = note->title;
+    payload.body = m_sealedBlocks->strippedBodyForExport(note->id, note->body);
+    payload.tags = note->tags;
+    const GrimSharePackResult result = GrimShare::packNotes(path, {payload}, passphrase);
+    if (!result.ok) {
+        DialogUtils::warning(this, QStringLiteral("GrimShare"), result.error);
+        return;
+    }
+    if (m_chronicle) {
+        m_chronicle->appendEvent(
+            QStringLiteral("grimshare_export"),
+            QStringLiteral("Exported GrimShare package for \"%1\"").arg(note->title),
+            m_session.key());
+    }
+    DialogUtils::information(this, QStringLiteral("GrimShare"), QStringLiteral("Package saved."));
+}
+
+void MainWindow::onImportGrimShare() {
+    const QString path = GrimFileDialog::getOpenFileName(
+        this,
+        QStringLiteral("Import GrimShare"),
+        QString(),
+        QStringLiteral("GrimShare (*.grimshare)"));
+    if (path.isEmpty()) {
+        return;
+    }
+    bool ok = false;
+    const QString passphrase = GrimInputDialog::getPassword(
+        this,
+        QStringLiteral("GrimShare"),
+        QStringLiteral("Enter package passphrase:"),
+        &ok);
+    if (!ok || passphrase.isEmpty()) {
+        return;
+    }
+    const GrimShareUnpackResult unpacked = GrimShare::unpackFile(path, passphrase);
+    if (!unpacked.ok) {
+        DialogUtils::warning(this, QStringLiteral("GrimShare"), unpacked.error);
+        return;
+    }
+    if (!DialogUtils::question(
+            this,
+            QStringLiteral("GrimShare Import"),
+            QStringLiteral("Import %1 note(s) into your vault?").arg(unpacked.notes.size()))) {
+        return;
+    }
+    int imported = 0;
+    for (const GrimShareNotePayload& payload : unpacked.notes) {
+        Note note;
+        note.title = payload.title.isEmpty() ? QStringLiteral("Imported Share") : payload.title;
+        note.body = payload.body;
+        note.folderId = m_notes->defaultFolderId();
+        note.tags = payload.tags;
+        if (m_notes->createNote(note, m_session.key()) > 0) {
+            ++imported;
+        }
+    }
+    loadNotes();
+    DialogUtils::information(
+        this,
+        QStringLiteral("GrimShare"),
+        QStringLiteral("Imported %1 note(s).").arg(imported));
+}
+
+void MainWindow::onLockWorkChamber() {
+    m_chambers.lockChamber(ChamberId::Work);
+    if (m_chronicle) {
+        m_chronicle->appendEvent(
+            QStringLiteral("chamber_lock"),
+            QStringLiteral("Locked Work chamber"),
+            m_session.key());
+    }
+    DialogUtils::information(
+        this,
+        QStringLiteral("Crypt Chambers"),
+        QStringLiteral("Work chamber locked. Notes tagged for Work are hidden until re-unlocked."));
+}
+
+void MainWindow::onUnlockWorkChamber() {
+    bool ok = false;
+    const QString password = GrimInputDialog::getPassword(
+        this,
+        QStringLiteral("Unlock Work Chamber"),
+        QStringLiteral("Re-enter master password to unlock Work chamber:"),
+        &ok);
+    if (!ok || password.isEmpty()) {
+        return;
+    }
+    QByteArray key;
+    if (!m_vault->unlockVault(password, key)) {
+        DialogUtils::warning(this, QStringLiteral("Crypt Chambers"), QStringLiteral("Password incorrect."));
+        return;
+    }
+    CryptoManager::secureZero(key);
+    if (!m_chambers.unlockChamber(ChamberId::Work, m_session.key())) {
+        DialogUtils::warning(this, QStringLiteral("Crypt Chambers"), QStringLiteral("Could not unlock chamber."));
+        return;
+    }
+    if (m_chronicle) {
+        m_chronicle->appendEvent(
+            QStringLiteral("chamber_unlock"),
+            QStringLiteral("Unlocked Work chamber"),
+            m_session.key());
+    }
+    DialogUtils::information(this, QStringLiteral("Crypt Chambers"), QStringLiteral("Work chamber unlocked."));
+}
+
 void MainWindow::onNoteSelected(qint64 id) {
     if (m_currentNoteId > 0 && m_currentNoteId != id) {
         saveCurrentNote(false, false);
@@ -750,6 +1240,9 @@ bool MainWindow::saveCurrentNote(bool showFolderPicker, bool closeAfter, bool sh
         m_editor->setTitle(n.title);
     }
     n.body = m_editor->body();
+    if (m_currentNoteId > 0) {
+        n.body = m_sealedBlocks->processBodyForSave(m_currentNoteId, n.body, m_session.key());
+    }
     n.isFavorite = m_editor->isFavorite();
     n.folderId = folderId;
     const QStringList tagParts = m_editor->tags().split(
@@ -842,8 +1335,15 @@ void MainWindow::onLockVault() {
             return;
         }
     }
+    if (m_chronicle) {
+        m_chronicle->appendEvent(
+            QStringLiteral("vault_lock"),
+            QStringLiteral("Vault locked"),
+            m_session.key());
+    }
     stopBridge();
     clearAllSensitiveState();
+    m_chambers.reset();
     m_session.lock();
     m_lockingVault = false;
     emit vaultLocked();
@@ -893,6 +1393,7 @@ void MainWindow::refreshSidebar() {
 
 void MainWindow::showSettings() {
     saveCurrentCredential(false);
+    refreshVaultHealth();
     m_contentStack->hide();
     m_settingsPanel->show();
 }
@@ -984,6 +1485,14 @@ void MainWindow::onBackupVault(const QString& path) {
     }
 
     if (m_vault->exportEncryptedBackupV2(path, password)) {
+        AppSettings::setLastEncryptedBackupTime(QDateTime::currentDateTimeUtc());
+        if (m_chronicle) {
+            m_chronicle->appendEvent(
+                QStringLiteral("backup_created"),
+                QStringLiteral("Encrypted backup saved"),
+                m_session.key());
+        }
+        refreshVaultHealth();
         DialogUtils::information(this, QStringLiteral("Backup"),
             QStringLiteral("Encrypted backup saved (GRIMBKUP2)."));
     } else {
@@ -1262,6 +1771,13 @@ void MainWindow::updateStatusBar() {
 
 void MainWindow::onVaultUnlocked() {
     m_credentials->migrateFillPolicies(m_session.key());
+    m_chambers.unlockAll(m_session.key());
+    if (m_chronicle) {
+        m_chronicle->appendEvent(
+            QStringLiteral("vault_unlock"),
+            QStringLiteral("Vault unlocked"),
+            m_session.key());
+    }
     if (m_previewTimer) {
         m_previewTimer->start();
     }
@@ -1303,10 +1819,13 @@ void MainWindow::startBridge() {
 
     m_bridge = std::make_unique<CredentialBridgeServer>(this);
     m_bridge->setRepository(m_credentials.get());
+    m_bridge->setNoteRepository(m_notes.get());
     m_bridge->setFillCoordinator(m_fillCoordinator.get());
+    m_bridge->setClipCoordinator(m_clipCoordinator.get());
     m_bridge->setUnlockedChecker([this]() { return m_session.isUnlocked(); });
     m_bridge->setSessionKeyProvider([this]() { return m_session.key(); });
     m_bridge->setBridgeEnabledChecker([]() { return AppSettings::browserBridgeEnabled(); });
+    m_bridge->setClipEnabledChecker([]() { return AppSettings::webClipperEnabled(); });
 
     connect(
         m_fillCoordinator.get(),
@@ -1326,6 +1845,41 @@ void MainWindow::startBridge() {
                     QStringLiteral("Allow browser extension to fill \"%1\" on %2?")
                         .arg(label, origin));
                 m_bridge->completeFillDecision(socket, approved && m_session.isUnlocked());
+                if (m_chronicle) {
+                    m_chronicle->appendEvent(
+                        QStringLiteral("bridge_fill"),
+                        approved
+                            ? QStringLiteral("Fill approved for %1 on %2").arg(label, origin)
+                            : QStringLiteral("Fill denied for %1 on %2").arg(label, origin),
+                        m_session.key());
+                }
+            });
+        },
+        Qt::UniqueConnection);
+    connect(
+        m_clipCoordinator.get(),
+        &BridgeClipCoordinator::confirmationRequested,
+        this,
+        [this](const QString& title, const QString& origin, const QString& preview, QLocalSocket* socket) {
+            QTimer::singleShot(0, this, [this, title, origin, preview, socket]() {
+                if (!m_bridge || !m_session.isUnlocked()) {
+                    if (m_bridge) {
+                        m_bridge->completeClipDecision(socket, false);
+                    }
+                    return;
+                }
+                const bool approved = DialogUtils::question(
+                    this,
+                    QStringLiteral("Web Clipper"),
+                    QStringLiteral("Clip \"%1\" from %2?\n\nPreview:\n%3")
+                        .arg(title, origin, preview));
+                m_bridge->completeClipDecision(socket, approved && m_session.isUnlocked());
+                if (m_chronicle && approved) {
+                    m_chronicle->appendEvent(
+                        QStringLiteral("web_clip"),
+                        QStringLiteral("Clipped \"%1\" from %2").arg(title, origin),
+                        m_session.key());
+                }
             });
         },
         Qt::UniqueConnection);
@@ -1359,10 +1913,14 @@ void MainWindow::stopBridge() {
     if (m_fillCoordinator) {
         m_fillCoordinator->cancelAll();
     }
+    if (m_clipCoordinator) {
+        m_clipCoordinator->cancelAll();
+    }
     m_bridge->cancelPendingRequests();
     m_bridge->stop();
     m_bridge.reset();
     disconnect(m_fillCoordinator.get(), &BridgeFillCoordinator::confirmationRequested, this, nullptr);
+    disconnect(m_clipCoordinator.get(), &BridgeClipCoordinator::confirmationRequested, this, nullptr);
     if (m_bridgeLabel) {
         m_bridgeLabel->setText(QStringLiteral("Bridge: off"));
     }

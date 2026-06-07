@@ -201,9 +201,127 @@ bool Database::initializeSchema() {
     }
 
     if (!hasEncryptedFillPolicy) {
-        return execute(QStringLiteral(
-            "ALTER TABLE credentials ADD COLUMN encrypted_fill_policy BLOB;"));
+        if (!execute(QStringLiteral(
+                "ALTER TABLE credentials ADD COLUMN encrypted_fill_policy BLOB;"))) {
+            return false;
+        }
     }
 
-    return true;
+    bool hasEncryptedTotp = false;
+    if (sqlite3_prepare_v2(
+            m_db,
+            "PRAGMA table_info(credentials);",
+            -1,
+            &pragmaStmt,
+            nullptr) == SQLITE_OK) {
+        while (sqlite3_step(pragmaStmt) == SQLITE_ROW) {
+            const char* name = reinterpret_cast<const char*>(sqlite3_column_text(pragmaStmt, 1));
+            if (name && qstrcmp(name, "encrypted_totp") == 0) {
+                hasEncryptedTotp = true;
+                break;
+            }
+        }
+        sqlite3_finalize(pragmaStmt);
+    }
+
+    if (!hasEncryptedTotp) {
+        if (!execute(QStringLiteral(
+                "ALTER TABLE credentials ADD COLUMN encrypted_totp BLOB;"))) {
+            return false;
+        }
+    }
+
+    auto hasColumn = [&](const char* table, const char* column) {
+        bool found = false;
+        sqlite3_stmt* stmt = nullptr;
+        const QByteArray sql = QByteArray("PRAGMA table_info(") + table + ");";
+        if (sqlite3_prepare_v2(m_db, sql.constData(), -1, &stmt, nullptr) == SQLITE_OK) {
+            while (sqlite3_step(stmt) == SQLITE_ROW) {
+                const char* name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+                if (name && qstrcmp(name, column) == 0) {
+                    found = true;
+                    break;
+                }
+            }
+            sqlite3_finalize(stmt);
+        }
+        return found;
+    };
+
+    if (!hasColumn("notes", "chamber_id")) {
+        if (!execute(QStringLiteral(
+                "ALTER TABLE notes ADD COLUMN chamber_id INTEGER NOT NULL DEFAULT 0;"))) {
+            return false;
+        }
+    }
+    if (!hasColumn("notes", "is_casebook")) {
+        if (!execute(QStringLiteral(
+                "ALTER TABLE notes ADD COLUMN is_casebook INTEGER NOT NULL DEFAULT 0;"))) {
+            return false;
+        }
+    }
+    if (!hasColumn("note_attachments", "sha256_hex")) {
+        if (!execute(QStringLiteral(
+                "ALTER TABLE note_attachments ADD COLUMN sha256_hex TEXT;"))) {
+            return false;
+        }
+    }
+    if (!hasColumn("note_attachments", "source_url")) {
+        if (!execute(QStringLiteral(
+                "ALTER TABLE note_attachments ADD COLUMN source_url TEXT;"))) {
+            return false;
+        }
+    }
+    if (!hasColumn("note_attachments", "acquisition_note")) {
+        if (!execute(QStringLiteral(
+                "ALTER TABLE note_attachments ADD COLUMN acquisition_note TEXT;"))) {
+            return false;
+        }
+    }
+    if (!hasColumn("note_attachments", "is_evidence")) {
+        if (!execute(QStringLiteral(
+                "ALTER TABLE note_attachments ADD COLUMN is_evidence INTEGER NOT NULL DEFAULT 0;"))) {
+            return false;
+        }
+    }
+
+    const char* stageBSchema = R"SQL(
+        CREATE TABLE IF NOT EXISTS sealed_blocks (
+            id TEXT PRIMARY KEY,
+            note_id INTEGER NOT NULL,
+            encrypted_label BLOB NOT NULL,
+            encrypted_content BLOB NOT NULL,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_sealed_blocks_note ON sealed_blocks(note_id);
+
+        CREATE TABLE IF NOT EXISTS runbook_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            note_id INTEGER NOT NULL,
+            encrypted_state BLOB NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS security_chronicle (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_type TEXT NOT NULL,
+            encrypted_metadata BLOB NOT NULL,
+            prev_hash BLOB NOT NULL,
+            entry_hash BLOB NOT NULL,
+            created_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_chronicle_created ON security_chronicle(created_at DESC);
+
+        CREATE TABLE IF NOT EXISTS semantic_index (
+            note_id INTEGER PRIMARY KEY,
+            encrypted_tokens BLOB NOT NULL,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
+        );
+    )SQL";
+
+    return execute(QString::fromUtf8(stageBSchema));
 }

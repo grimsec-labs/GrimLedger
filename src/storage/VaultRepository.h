@@ -30,6 +30,7 @@ public:
 
     bool createVault(const QString& masterPassword);
     bool unlockVault(const QString& masterPassword, QByteArray& derivedKeyOut);
+    bool unlockWithDerivedKey(QByteArray& derivedKeyInOut);
 
     bool changeMasterPassword(
         const QByteArray& currentKey,

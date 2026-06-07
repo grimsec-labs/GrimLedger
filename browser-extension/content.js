@@ -1,21 +1,63 @@
-function findLoginFields() {
-  let passwordInput = document.querySelector('input[autocomplete="current-password"]');
-  if (!passwordInput) {
-    passwordInput = document.querySelector('input[type="password"]');
+function getNativeInputValueSetter(input) {
+  const prototype = Object.getPrototypeOf(input);
+  const descriptor = Object.getOwnPropertyDescriptor(prototype, "value");
+  return descriptor && descriptor.set;
+}
+
+function setNativeInputValue(input, value) {
+  if (!input) {
+    return;
   }
+  const setter = getNativeInputValueSetter(input);
+  if (setter) {
+    setter.call(input, value);
+  } else {
+    input.value = value;
+  }
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+function collectRoots(root, out) {
+  out.push(root);
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+  let node = walker.nextNode();
+  while (node) {
+    if (node.shadowRoot) {
+      collectRoots(node.shadowRoot, out);
+    }
+    node = walker.nextNode();
+  }
+}
+
+function queryAllDeep(selector) {
+  const roots = [document];
+  collectRoots(document, roots);
+  const matches = [];
+  for (const root of roots) {
+    matches.push(...root.querySelectorAll(selector));
+  }
+  return matches;
+}
+
+function findLoginFields() {
+  const passwordCandidates = queryAllDeep(
+    'input[autocomplete="current-password"], input[type="password"]'
+  );
+  const passwordInput = passwordCandidates.find((input) => input.offsetParent !== null) || passwordCandidates[0];
   if (!passwordInput) {
     return null;
   }
 
-  let usernameInput = document.querySelector('input[autocomplete="username"]')
-    || document.querySelector('input[autocomplete="email"]');
+  let usernameInput = queryAllDeep('input[autocomplete="username"], input[autocomplete="email"]')
+    .find((input) => input.offsetParent !== null);
 
   if (!usernameInput) {
     const form = passwordInput.closest("form");
-    const candidates = form
-      ? form.querySelectorAll('input[type="email"], input[type="text"], input:not([type])')
-      : document.querySelectorAll('input[type="email"], input[type="text"], input:not([type])');
-
+    const scope = form || document;
+    const candidates = scope.querySelectorAll(
+      'input[type="email"], input[type="text"], input:not([type])'
+    );
     for (const input of candidates) {
       if (input === passwordInput) continue;
       const type = (input.getAttribute("type") || "").toLowerCase();
@@ -37,19 +79,23 @@ function fillFields(username, password) {
 
   if (fields.usernameInput && username) {
     fields.usernameInput.focus();
-    fields.usernameInput.value = username;
-    fields.usernameInput.dispatchEvent(new Event("input", { bubbles: true }));
-    fields.usernameInput.dispatchEvent(new Event("change", { bubbles: true }));
+    setNativeInputValue(fields.usernameInput, username);
   }
 
   if (fields.passwordInput && password) {
     fields.passwordInput.focus();
-    fields.passwordInput.value = password;
-    fields.passwordInput.dispatchEvent(new Event("input", { bubbles: true }));
-    fields.passwordInput.dispatchEvent(new Event("change", { bubbles: true }));
+    setNativeInputValue(fields.passwordInput, password);
   }
 
   return true;
+}
+
+function getSelectionText() {
+  const selection = window.getSelection();
+  if (!selection || selection.isCollapsed) {
+    return "";
+  }
+  return selection.toString().trim();
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -65,5 +111,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ ok: fillFields(message.username || "", message.password || "") });
     return true;
   }
+
+  if (message.action === "get_clip_payload") {
+    const text = getSelectionText();
+    sendResponse({
+      ok: text.length > 0,
+      title: document.title || "Clipped page",
+      url: window.location.href,
+      text,
+      origin: window.location.origin,
+    });
+    return true;
+  }
+
   return false;
 });

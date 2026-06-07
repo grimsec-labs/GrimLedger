@@ -1,5 +1,7 @@
 #pragma once
 
+#include "models/FillTrustLevel.h"
+
 #include <QString>
 #include <QDateTime>
 
@@ -8,7 +10,11 @@ struct CredentialSummary {
     QString label;
     QString username;
     QString url;
-    bool allowSubdomains = false;
+    FillTrustLevel fillTrustLevel = FillTrustLevel::ExactOrigin;
     QDateTime createdAt;
     QDateTime updatedAt;
+
+    bool allowSubdomains() const {
+        return fillTrustAllowsSubdomains(fillTrustLevel);
+    }
 };

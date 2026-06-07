@@ -62,3 +62,43 @@ void AppSettings::setAutoLockMinutes(int minutes) {
     QSettings settings;
     settings.setValue(QStringLiteral("security/autoLockMinutes"), minutes);
 }
+
+bool AppSettings::hibpCheckEnabled() {
+    QSettings settings;
+    return settings.value(QStringLiteral("security/hibpCheckEnabled"), false).toBool();
+}
+
+void AppSettings::setHibpCheckEnabled(bool enabled) {
+    QSettings settings;
+    settings.setValue(QStringLiteral("security/hibpCheckEnabled"), enabled);
+}
+
+QDateTime AppSettings::lastEncryptedBackupTime() {
+    QSettings settings;
+    return settings.value(QStringLiteral("vault/lastEncryptedBackupUtc")).toDateTime().toUTC();
+}
+
+void AppSettings::setLastEncryptedBackupTime(const QDateTime& when) {
+    QSettings settings;
+    settings.setValue(QStringLiteral("vault/lastEncryptedBackupUtc"), when.toUTC());
+}
+
+bool AppSettings::webClipperEnabled() {
+    QSettings settings;
+    return settings.value(QStringLiteral("security/webClipperEnabled"), false).toBool();
+}
+
+void AppSettings::setWebClipperEnabled(bool enabled) {
+    QSettings settings;
+    settings.setValue(QStringLiteral("security/webClipperEnabled"), enabled);
+}
+
+bool AppSettings::semanticSearchEnabled() {
+    QSettings settings;
+    return settings.value(QStringLiteral("search/semanticSearchEnabled"), false).toBool();
+}
+
+void AppSettings::setSemanticSearchEnabled(bool enabled) {
+    QSettings settings;
+    settings.setValue(QStringLiteral("search/semanticSearchEnabled"), enabled);
+}

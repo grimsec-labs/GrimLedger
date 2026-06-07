@@ -18,6 +18,7 @@ public:
 signals:
     void unlockRequested(const QString& password);
     void createVaultRequested(const QString& password);
+    void helloUnlockRequested();
 
 private slots:
     void onUnlockClicked();
@@ -46,6 +47,7 @@ private:
     QLabel* m_strengthLabel = nullptr;
     QProgressBar* m_strengthBar = nullptr;
     QLabel* m_cursorLabel = nullptr;
+    QPushButton* m_helloButton = nullptr;
     bool m_createMode = false;
     bool m_vaultExists = false;
 };

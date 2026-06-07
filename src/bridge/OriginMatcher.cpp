@@ -36,7 +36,11 @@ QString normalizeHost(const QString& host) {
 bool pageOriginMatchesCredentialUrl(
     const QString& pageOrigin,
     const QString& credentialUrl,
-    bool allowSubdomains) {
+    FillTrustLevel trustLevel) {
+    if (trustLevel == FillTrustLevel::ManualOnly) {
+        return false;
+    }
+    const bool allowSubdomains = fillTrustAllowsSubdomains(trustLevel);
     if (credentialUrl.trimmed().isEmpty()) {
         return false;
     }

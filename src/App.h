@@ -20,6 +20,7 @@ public:
 
 private slots:
     void onUnlockRequested(const QString& password);
+    void onHelloUnlockRequested();
     void onCreateVaultRequested(const QString& password);
     void onVaultLocked();
 

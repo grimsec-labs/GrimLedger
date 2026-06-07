@@ -1,5 +1,6 @@
 #include "markdown/MarkdownRenderer.h"
 #include "markdown/SyntaxHighlighter.h"
+#include "markdown/DiagramRenderer.h"
 #include "storage/AttachmentRepository.h"
 
 #include <QRegularExpression>
@@ -162,13 +163,17 @@ QString MarkdownRenderer::renderToHtml(
                 codeLang = fence.captured(1);
                 codeBuffer.clear();
             } else {
-                const QString highlighted = SyntaxHighlighterEngine::highlightToHtml(
-                    codeBuffer, codeLang);
-                html += QStringLiteral("<pre><code class='language-")
-                    + escapeHtml(codeLang)
-                    + QStringLiteral("'>")
-                    + highlighted
-                    + QStringLiteral("</code></pre>");
+                if (DiagramRenderer::isDiagramLanguage(codeLang)) {
+                    html += DiagramRenderer::renderMermaidSubset(codeBuffer, accentColor);
+                } else {
+                    const QString highlighted = SyntaxHighlighterEngine::highlightToHtml(
+                        codeBuffer, codeLang);
+                    html += QStringLiteral("<pre><code class='language-")
+                        + escapeHtml(codeLang)
+                        + QStringLiteral("'>")
+                        + highlighted
+                        + QStringLiteral("</code></pre>");
+                }
                 inCode = false;
                 codeLang.clear();
                 codeBuffer.clear();
@@ -250,6 +255,21 @@ QString MarkdownRenderer::renderToHtml(
         if (ol.hasMatch()) {
             if (!inOl) { closeLists(); html += QStringLiteral("<ol>"); inOl = true; }
             html += QStringLiteral("<li>") + inlineFormat(ol.captured(1), resolveImage) + QStringLiteral("</li>");
+            continue;
+        }
+
+        static const QRegularExpression sealedRe(
+            QStringLiteral(R"(^\s*\[\[sealed:([0-9a-f\-]+):([^\]]+)\]\]\s*$)"));
+        const auto sealed = sealedRe.match(line);
+        if (sealed.hasMatch()) {
+            closeLists();
+            html += QStringLiteral("<div class='sealed-block' data-block-id='")
+                + escapeHtml(sealed.captured(1))
+                + QStringLiteral("' style='border:1px dashed %1;padding:10px;margin:8px 0;'>")
+                    .arg(accentColor)
+                + QStringLiteral("🔒 Sealed: ")
+                + escapeHtml(sealed.captured(2))
+                + QStringLiteral(" <em>(reveal from editor)</em></div>");
             continue;
         }
 

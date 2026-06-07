@@ -19,6 +19,8 @@
 #include "ui/Sidebar.h"
 #include "bridge/CredentialBridgeServer.h"
 #include "bridge/BridgeFillCoordinator.h"
+#include "bridge/BridgeClipCoordinator.h"
+#include "security/ChamberManager.h"
 
 class Sidebar;
 class NoteList;
@@ -32,6 +34,9 @@ class Database;
 class NoteRepository;
 class CredentialRepository;
 class VaultRepository;
+class SealedBlockRepository;
+class SecurityChronicle;
+class RunbookSessionRepository;
 class CustomTitleBar;
 
 enum class EditorViewMode;
@@ -84,6 +89,21 @@ private slots:
     void onGenerateCredentialPassword();
     void onCopyCredentialPassword();
     void onCopyCredentialUsername();
+    void onCopyCredentialTotp();
+    void onCheckCredentialBreach();
+    void onImportCredentials();
+    void refreshVaultHealth();
+    void onEnableHelloUnlock();
+    void onDisableHelloUnlock();
+    void onScanSecrets();
+    void onRedactExport();
+    void onStartRunbook();
+    void onShowKnowledgeGraph();
+    void onShowChronicle();
+    void onExportGrimShare();
+    void onImportGrimShare();
+    void onLockWorkChamber();
+    void onUnlockWorkChamber();
 
 signals:
     void vaultLocked();
@@ -120,7 +140,12 @@ protected:
     std::unique_ptr<CredentialRepository> m_credentials;
     std::unique_ptr<VaultRepository> m_vault;
     std::unique_ptr<BridgeFillCoordinator> m_fillCoordinator;
+    std::unique_ptr<BridgeClipCoordinator> m_clipCoordinator;
     std::unique_ptr<CredentialBridgeServer> m_bridge;
+    std::unique_ptr<SealedBlockRepository> m_sealedBlocks;
+    std::unique_ptr<SecurityChronicle> m_chronicle;
+    std::unique_ptr<RunbookSessionRepository> m_runbooks;
+    ChamberManager m_chambers;
 
     Sidebar* m_sidebar = nullptr;
     QStackedWidget* m_listStack = nullptr;

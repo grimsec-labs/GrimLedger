@@ -379,6 +379,40 @@ bool VaultRepository::createVault(const QString& masterPassword) {
     return ok;
 }
 
+namespace {
+
+bool verifyDerivedVaultKey(sqlite3* db, QByteArray& key) {
+    sqlite3_stmt* stmt = nullptr;
+    const char* sql = "SELECT value FROM app_metadata WHERE key = 'verify';";
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        CryptoManager::secureZero(key);
+        return false;
+    }
+
+    bool verified = false;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        const auto* blob = reinterpret_cast<const char*>(sqlite3_column_blob(stmt, 0));
+        const QByteArray stored(blob, sqlite3_column_bytes(stmt, 0));
+        const auto plain = CryptoManager::decryptField(
+            stored, key, CryptoManager::verifyAssociatedData());
+        if (!plain) {
+            const auto legacy = CryptoManager::decryptLegacy(stored, key);
+            verified = legacy.has_value() && *legacy == QByteArray("GRIMLEDGER_OK");
+        } else {
+            verified = *plain == QByteArray("GRIMLEDGER_OK");
+        }
+    }
+    sqlite3_finalize(stmt);
+
+    if (!verified) {
+        CryptoManager::secureZero(key);
+        return false;
+    }
+    return true;
+}
+
+} // namespace
+
 bool VaultRepository::unlockVault(const QString& masterPassword, QByteArray& derivedKeyOut) {
     const auto info = loadVaultInfo();
     if (!info) {
@@ -394,30 +428,7 @@ bool VaultRepository::unlockVault(const QString& masterPassword, QByteArray& der
         return false;
     }
 
-    sqlite3_stmt* stmt = nullptr;
-    const char* sql = "SELECT value FROM app_metadata WHERE key = 'verify';";
-    if (sqlite3_prepare_v2(m_db.handle(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
-        CryptoManager::secureZero(*key);
-        return false;
-    }
-
-    bool verified = false;
-    if (sqlite3_step(stmt) == SQLITE_ROW) {
-        const auto* blob = reinterpret_cast<const char*>(sqlite3_column_blob(stmt, 0));
-        const QByteArray stored(blob, sqlite3_column_bytes(stmt, 0));
-        const auto plain = CryptoManager::decryptField(
-            stored, *key, CryptoManager::verifyAssociatedData());
-        if (!plain) {
-            const auto legacy = CryptoManager::decryptLegacy(stored, *key);
-            verified = legacy.has_value() && *legacy == QByteArray("GRIMLEDGER_OK");
-        } else {
-            verified = *plain == QByteArray("GRIMLEDGER_OK");
-        }
-    }
-    sqlite3_finalize(stmt);
-
-    if (!verified) {
-        CryptoManager::secureZero(*key);
+    if (!verifyDerivedVaultKey(m_db.handle(), *key)) {
         return false;
     }
 
@@ -425,6 +436,22 @@ bool VaultRepository::unlockVault(const QString& masterPassword, QByteArray& der
     if (!cryptoFormatIsV2() && !migrateDomainBoundCrypto(derivedKeyOut)) {
         CryptoManager::secureZero(derivedKeyOut);
         derivedKeyOut.clear();
+        return false;
+    }
+    return true;
+}
+
+bool VaultRepository::unlockWithDerivedKey(QByteArray& derivedKeyInOut) {
+    if (!vaultExists() || !verificationTokenExists()) {
+        return false;
+    }
+    if (!verifyDerivedVaultKey(m_db.handle(), derivedKeyInOut)) {
+        derivedKeyInOut.clear();
+        return false;
+    }
+    if (!cryptoFormatIsV2() && !migrateDomainBoundCrypto(derivedKeyInOut)) {
+        CryptoManager::secureZero(derivedKeyInOut);
+        derivedKeyInOut.clear();
         return false;
     }
     return true;

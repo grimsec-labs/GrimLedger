@@ -51,10 +51,10 @@ DecryptResult<QString> CredentialRepository::decryptField(
 }
 
 QByteArray CredentialRepository::encryptFillPolicy(
-    bool allowSubdomains,
+    FillTrustLevel level,
     qint64 credId,
     const QByteArray& key) const {
-    const QByteArray plain(1, allowSubdomains ? '\x01' : '\x00');
+    const QByteArray plain(1, static_cast<char>(level));
     const auto enc = CryptoManager::encryptField(
         plain,
         key,
@@ -62,12 +62,13 @@ QByteArray CredentialRepository::encryptFillPolicy(
     return enc.value_or(QByteArray());
 }
 
-bool CredentialRepository::resolveAllowSubdomains(
+bool CredentialRepository::resolveFillTrustLevel(
     sqlite3_stmt* stmt,
     int plainCol,
     int encCol,
     qint64 credId,
     const QByteArray& key,
+    FillTrustLevel& levelOut,
     bool& integrityError) const {
     const auto* encPtr = reinterpret_cast<const char*>(sqlite3_column_blob(stmt, encCol));
     const QByteArray encBlob(encPtr, sqlite3_column_bytes(stmt, encCol));
@@ -80,22 +81,34 @@ bool CredentialRepository::resolveAllowSubdomains(
             integrityError = true;
             return false;
         }
-        return (*dec)[0] != '\x00';
+        const int raw = static_cast<unsigned char>((*dec)[0]);
+        if (raw <= static_cast<int>(FillTrustLevel::AllowSubdomains)) {
+            levelOut = fillTrustLevelFromInt(raw);
+            return true;
+        }
+        levelOut = (*dec)[0] != '\x00'
+            ? FillTrustLevel::AllowSubdomains
+            : FillTrustLevel::ExactOrigin;
+        return true;
     }
 
     const int type = sqlite3_column_type(stmt, plainCol);
     if (type == SQLITE_NULL) {
-        return false;
+        levelOut = FillTrustLevel::ExactOrigin;
+        return true;
     }
-    return sqlite3_column_int(stmt, plainCol) != 0;
+    levelOut = sqlite3_column_int(stmt, plainCol) != 0
+        ? FillTrustLevel::AllowSubdomains
+        : FillTrustLevel::ExactOrigin;
+    return true;
 }
 
 namespace {
 
 const char* kSelectColumns =
     "SELECT id, encrypted_label, encrypted_username, encrypted_password, "
-    "encrypted_url, encrypted_notes, created_at, updated_at, allow_subdomains, "
-    "encrypted_fill_policy FROM credentials";
+    "encrypted_url, encrypted_notes, encrypted_totp, created_at, updated_at, "
+    "allow_subdomains, encrypted_fill_policy FROM credentials";
 
 const char* kSummarySelectColumns =
     "SELECT id, encrypted_label, encrypted_username, encrypted_url, "
@@ -115,23 +128,21 @@ Credential CredentialRepository::rowToCredential(sqlite3_stmt* stmt, const QByte
     Credential c;
     c.id = sqlite3_column_int64(stmt, 0);
     c.integrityError = false;
-    c.allowSubdomains = resolveAllowSubdomains(
-        stmt,
-        8,
-        9,
-        c.id,
-        key,
-        c.integrityError);
-    if (c.integrityError) {
+    if (!resolveFillTrustLevel(stmt, 9, 10, c.id, key, c.fillTrustLevel, c.integrityError)
+        || c.integrityError) {
         return c;
     }
 
-    static const char* kFields[] = {"label", "username", "password", "url", "notes"};
-    QString* targets[] = {&c.label, &c.username, &c.password, &c.url, &c.notes};
+    static const char* kFields[] = {"label", "username", "password", "url", "notes", "totp"};
+    QString* targets[] = {&c.label, &c.username, &c.password, &c.url, &c.notes, &c.totpSecret};
+    constexpr int kFieldColumns[] = {1, 2, 3, 4, 5, 6};
 
-    for (int i = 0; i < 5; ++i) {
-        const auto* ptr = reinterpret_cast<const char*>(sqlite3_column_blob(stmt, 1 + i));
-        const QByteArray blob(ptr, sqlite3_column_bytes(stmt, 1 + i));
+    for (int i = 0; i < 6; ++i) {
+        const auto* ptr = reinterpret_cast<const char*>(sqlite3_column_blob(stmt, kFieldColumns[i]));
+        const QByteArray blob(ptr, sqlite3_column_bytes(stmt, kFieldColumns[i]));
+        if (blob.isEmpty() && i == 5) {
+            continue;
+        }
         const DecryptResult<QString> dec = decryptField(blob, c.id, kFields[i], key);
         if (dec.status == DecryptStatus::IntegrityError) {
             c.integrityError = true;
@@ -140,8 +151,8 @@ Credential CredentialRepository::rowToCredential(sqlite3_stmt* stmt, const QByte
         *targets[i] = dec.value;
     }
 
-    c.createdAt = TimeUtils::fromUnix(sqlite3_column_int64(stmt, 6));
-    c.updatedAt = TimeUtils::fromUnix(sqlite3_column_int64(stmt, 7));
+    c.createdAt = TimeUtils::fromUnix(sqlite3_column_int64(stmt, 7));
+    c.updatedAt = TimeUtils::fromUnix(sqlite3_column_int64(stmt, 8));
     return c;
 }
 
@@ -149,13 +160,17 @@ CredentialSummary CredentialRepository::rowToSummary(sqlite3_stmt* stmt, const Q
     CredentialSummary summary;
     summary.id = sqlite3_column_int64(stmt, 0);
     bool integrityError = false;
-    summary.allowSubdomains = resolveAllowSubdomains(
-        stmt,
-        kSummaryColAllowSubdomains,
-        kSummaryColEncryptedFillPolicy,
-        summary.id,
-        key,
-        integrityError);
+    if (!resolveFillTrustLevel(
+            stmt,
+            kSummaryColAllowSubdomains,
+            kSummaryColEncryptedFillPolicy,
+            summary.id,
+            key,
+            summary.fillTrustLevel,
+            integrityError)) {
+        summary.label = QStringLiteral("(integrity error)");
+        return summary;
+    }
 
     struct FieldMapping {
         int column;
@@ -276,7 +291,7 @@ qint64 CredentialRepository::createCredential(const Credential& cred, const QByt
     sqlite3_bind_blob(stmt, 5, placeholderNotes.constData(), placeholderNotes.size(), SQLITE_TRANSIENT);
     sqlite3_bind_int64(stmt, 6, now);
     sqlite3_bind_int64(stmt, 7, now);
-    sqlite3_bind_int(stmt, 8, cred.allowSubdomains ? 1 : 0);
+    sqlite3_bind_int(stmt, 8, cred.allowSubdomains() ? 1 : 0);
 
     if (!SqliteUtils::stepDone(stmt)) {
         sqlite3_finalize(stmt);
@@ -312,10 +327,16 @@ bool CredentialRepository::updateCredential(const Credential& cred, const QByteA
     const QByteArray encPass = encryptField(cred.password, cred.id, "password", key);
     const QByteArray encUrl = encryptField(cred.url, cred.id, "url", key);
     const QByteArray encNotes = encryptField(cred.notes, cred.id, "notes", key);
-    const QByteArray encPolicy = encryptFillPolicy(cred.allowSubdomains, cred.id, key);
+    const QByteArray encTotp = cred.totpSecret.isEmpty()
+        ? QByteArray()
+        : encryptField(cred.totpSecret, cred.id, "totp", key);
+    const QByteArray encPolicy = encryptFillPolicy(cred.fillTrustLevel, cred.id, key);
 
     if (encLabel.isEmpty() || encUser.isEmpty() || encPass.isEmpty()
         || encUrl.isEmpty() || encNotes.isEmpty() || encPolicy.isEmpty()) {
+        return false;
+    }
+    if (!cred.totpSecret.isEmpty() && encTotp.isEmpty()) {
         return false;
     }
 
@@ -323,7 +344,8 @@ bool CredentialRepository::updateCredential(const Credential& cred, const QByteA
     const char* sql =
         "UPDATE credentials SET encrypted_label = ?, encrypted_username = ?, "
         "encrypted_password = ?, encrypted_url = ?, encrypted_notes = ?, "
-        "updated_at = ?, allow_subdomains = ?, encrypted_fill_policy = ? WHERE id = ?;";
+        "encrypted_totp = ?, updated_at = ?, allow_subdomains = ?, "
+        "encrypted_fill_policy = ? WHERE id = ?;";
 
     if (sqlite3_prepare_v2(m_db.handle(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
         return false;
@@ -334,10 +356,15 @@ bool CredentialRepository::updateCredential(const Credential& cred, const QByteA
     sqlite3_bind_blob(stmt, 3, encPass.constData(), encPass.size(), SQLITE_TRANSIENT);
     sqlite3_bind_blob(stmt, 4, encUrl.constData(), encUrl.size(), SQLITE_TRANSIENT);
     sqlite3_bind_blob(stmt, 5, encNotes.constData(), encNotes.size(), SQLITE_TRANSIENT);
-    sqlite3_bind_int64(stmt, 6, now);
-    sqlite3_bind_int(stmt, 7, cred.allowSubdomains ? 1 : 0);
-    sqlite3_bind_blob(stmt, 8, encPolicy.constData(), encPolicy.size(), SQLITE_TRANSIENT);
-    sqlite3_bind_int64(stmt, 9, cred.id);
+    if (encTotp.isEmpty()) {
+        sqlite3_bind_null(stmt, 6);
+    } else {
+        sqlite3_bind_blob(stmt, 6, encTotp.constData(), encTotp.size(), SQLITE_TRANSIENT);
+    }
+    sqlite3_bind_int64(stmt, 7, now);
+    sqlite3_bind_int(stmt, 8, cred.allowSubdomains() ? 1 : 0);
+    sqlite3_bind_blob(stmt, 9, encPolicy.constData(), encPolicy.size(), SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt, 10, cred.id);
 
     if (!SqliteUtils::stepDone(stmt)) {
         sqlite3_finalize(stmt);
@@ -388,7 +415,10 @@ bool CredentialRepository::migrateFillPolicies(const QByteArray& key) {
     }
 
     for (const auto& row : pending) {
-        const QByteArray encPolicy = encryptFillPolicy(row.second, row.first, key);
+        const FillTrustLevel level = row.second
+            ? FillTrustLevel::AllowSubdomains
+            : FillTrustLevel::ExactOrigin;
+        const QByteArray encPolicy = encryptFillPolicy(level, row.first, key);
         if (encPolicy.isEmpty()) {
             return false;
         }
@@ -439,4 +469,90 @@ QVector<Credential> CredentialRepository::searchCredentials(
         }
     }
     return matches;
+}
+
+int CredentialRepository::countCredentialIntegrityErrors(const QByteArray& key) const {
+    int errors = 0;
+    for (const CredentialSummary& summary : listCredentialSummaries(key)) {
+        if (summary.label == QStringLiteral("(integrity error)")) {
+            ++errors;
+            continue;
+        }
+        const auto cred = getCredential(summary.id, key);
+        if (cred && cred->integrityError) {
+            ++errors;
+        }
+    }
+    return errors;
+}
+
+bool CredentialRepository::importCredentials(
+    const QVector<Credential>& creds,
+    const QByteArray& key,
+    int* importedOut) {
+    if (creds.isEmpty()) {
+        return false;
+    }
+
+    DbTransaction tx(m_db);
+    if (!tx.isActive()) {
+        return false;
+    }
+
+    const qint64 now = TimeUtils::toUnix(QDateTime::currentDateTimeUtc());
+    int imported = 0;
+    for (Credential cred : creds) {
+        if (cred.label.isEmpty()) {
+            return false;
+        }
+
+        sqlite3_stmt* stmt = nullptr;
+        const char* sql =
+            "INSERT INTO credentials "
+            "(encrypted_label, encrypted_username, encrypted_password, encrypted_url, "
+            "encrypted_notes, created_at, updated_at, allow_subdomains) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?);";
+        if (sqlite3_prepare_v2(m_db.handle(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
+            return false;
+        }
+
+        const QByteArray placeholderLabel = encryptField(cred.label, 0, "label", key);
+        const QByteArray placeholderUser = encryptField(cred.username, 0, "username", key);
+        const QByteArray placeholderPass = encryptField(cred.password, 0, "password", key);
+        const QByteArray placeholderUrl = encryptField(cred.url, 0, "url", key);
+        const QByteArray placeholderNotes = encryptField(cred.notes, 0, "notes", key);
+        if (placeholderLabel.isEmpty() || placeholderUser.isEmpty() || placeholderPass.isEmpty()
+            || placeholderUrl.isEmpty() || placeholderNotes.isEmpty()) {
+            sqlite3_finalize(stmt);
+            return false;
+        }
+
+        sqlite3_bind_blob(stmt, 1, placeholderLabel.constData(), placeholderLabel.size(), SQLITE_TRANSIENT);
+        sqlite3_bind_blob(stmt, 2, placeholderUser.constData(), placeholderUser.size(), SQLITE_TRANSIENT);
+        sqlite3_bind_blob(stmt, 3, placeholderPass.constData(), placeholderPass.size(), SQLITE_TRANSIENT);
+        sqlite3_bind_blob(stmt, 4, placeholderUrl.constData(), placeholderUrl.size(), SQLITE_TRANSIENT);
+        sqlite3_bind_blob(stmt, 5, placeholderNotes.constData(), placeholderNotes.size(), SQLITE_TRANSIENT);
+        sqlite3_bind_int64(stmt, 6, now);
+        sqlite3_bind_int64(stmt, 7, now);
+        sqlite3_bind_int(stmt, 8, cred.allowSubdomains() ? 1 : 0);
+        if (!SqliteUtils::stepDone(stmt)) {
+            sqlite3_finalize(stmt);
+            return false;
+        }
+        sqlite3_finalize(stmt);
+
+        cred.id = sqlite3_last_insert_rowid(m_db.handle());
+        if (cred.id <= 0 || !updateCredential(cred, key)) {
+            return false;
+        }
+        ++imported;
+    }
+
+    if (!tx.commit()) {
+        return false;
+    }
+    if (importedOut) {
+        *importedOut = imported;
+    }
+    return true;
 }

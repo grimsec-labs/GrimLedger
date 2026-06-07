@@ -245,6 +245,40 @@ QByteArray CryptoManager::credentialFillPolicyAssociatedData(qint64 credentialId
     return QByteArray("grim:cred:") + QByteArray::number(credentialId) + QByteArray(":fill_policy");
 }
 
+QByteArray CryptoManager::sealedBlockAssociatedData(qint64 noteId, const QString& blockId) {
+    return QByteArray("grim:sealed:")
+        + QByteArray::number(noteId) + ':' + blockId.toUtf8();
+}
+
+QByteArray CryptoManager::chronicleEntryAssociatedData(qint64 entryId) {
+    return QByteArray("grim:chronicle:") + QByteArray::number(entryId);
+}
+
+QByteArray CryptoManager::grimShareAssociatedData(const QByteArray& header) {
+    return QByteArray("grim:share:v1:") + header;
+}
+
+QByteArray CryptoManager::runbookSessionAssociatedData(qint64 sessionId) {
+    return QByteArray("grim:runbook:") + QByteArray::number(sessionId);
+}
+
+QByteArray CryptoManager::deriveChamberKey(const QByteArray& masterKey, int chamberId) {
+    if (masterKey.size() != kKeySize || chamberId < 0) {
+        return QByteArray();
+    }
+    const QByteArray ctx = QByteArray("grimchmb").left(8);
+    unsigned char out[kKeySize];
+    if (crypto_kdf_derive_from_key(
+            out,
+            sizeof(out),
+            static_cast<uint64_t>(chamberId),
+            ctx.constData(),
+            reinterpret_cast<const unsigned char*>(masterKey.constData())) != 0) {
+        return QByteArray();
+    }
+    return QByteArray(reinterpret_cast<char*>(out), static_cast<int>(sizeof(out)));
+}
+
 QByteArray CryptoManager::backupEnvelopeAssociatedData(const QByteArray& header) {
     return QByteArray("grim:backup:v2:") + header;
 }

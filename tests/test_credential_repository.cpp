@@ -1,6 +1,7 @@
 #include "storage/CredentialRepository.h"
 #include "storage/Database.h"
 #include "security/CryptoManager.h"
+#include "models/FillTrustLevel.h"
 
 #include <sodium.h>
 
@@ -46,7 +47,7 @@ int main(int argc, char* argv[]) {
     cred.password = QStringLiteral("secret-password-value");
     cred.url = QStringLiteral("https://example.com/login");
     cred.notes = QStringLiteral("note text");
-    cred.allowSubdomains = true;
+    cred.fillTrustLevel = FillTrustLevel::AllowSubdomains;
 
     const qint64 id = repo.createCredential(cred, key);
     if (!check(id > 0)) {
@@ -63,7 +64,7 @@ int main(int argc, char* argv[]) {
     if (!check(!summaries[0].url.contains(QStringLiteral("secret-password")))) {
         return 1;
     }
-    if (!check(summaries[0].allowSubdomains)) {
+    if (!check(summaries[0].fillTrustLevel == FillTrustLevel::AllowSubdomains)) {
         return 1;
     }
 
@@ -74,7 +75,7 @@ int main(int argc, char* argv[]) {
     if (!check(loaded->password == cred.password)) {
         return 1;
     }
-    if (!check(loaded->allowSubdomains)) {
+    if (!check(loaded->fillTrustLevel == FillTrustLevel::AllowSubdomains)) {
         return 1;
     }
     if (!check(!loaded->integrityError)) {

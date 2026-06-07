@@ -91,5 +91,28 @@ async function fillMatch(id, tab) {
   }
 }
 
+async function clipSelection() {
+  statusEl.textContent = "Clipping selection...";
+  statusEl.classList.remove("error");
+  try {
+    const tab = await getActiveTab();
+    if (!tab) {
+      throw new Error("Open an http(s) page first.");
+    }
+    const result = await chrome.runtime.sendMessage({
+      action: "clip_to_grimledger",
+      tabId: tab.tabId,
+    });
+    if (!result || !result.ok) {
+      throw new Error(result?.error || "Clip failed");
+    }
+    statusEl.textContent = "Clip sent to GrimLedger for approval.";
+  } catch (error) {
+    statusEl.textContent = error.message;
+    statusEl.classList.add("error");
+  }
+}
+
+document.getElementById("clip").addEventListener("click", clipSelection);
 document.getElementById("refresh").addEventListener("click", refresh);
 refresh();

@@ -2,6 +2,7 @@
 #include "ui/CustomTitleBar.h"
 #include "ui/FramelessResize.h"
 #include "security/PasswordManager.h"
+#include "security/WindowsHelloUnlock.h"
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -100,6 +101,11 @@ void LoginWindow::buildUi() {
     m_actionButton->setObjectName(QStringLiteral("PrimaryButton"));
     connect(m_actionButton, &QPushButton::clicked, this, &LoginWindow::onUnlockClicked);
 
+    m_helloButton = new QPushButton(QStringLiteral("Unlock with Windows Hello"), this);
+    m_helloButton->setObjectName(QStringLiteral("SecondaryButton"));
+    m_helloButton->hide();
+    connect(m_helloButton, &QPushButton::clicked, this, &LoginWindow::helloUnlockRequested);
+
     m_modeButton = new QPushButton(QStringLiteral("Create New Vault"), this);
     m_modeButton->setObjectName(QStringLiteral("SecondaryButton"));
     connect(m_modeButton, &QPushButton::clicked, this, &LoginWindow::onToggleMode);
@@ -130,6 +136,7 @@ void LoginWindow::buildUi() {
     root->addWidget(m_strengthLabel);
     root->addWidget(m_errorLabel);
     root->addWidget(m_actionButton);
+    root->addWidget(m_helloButton);
     root->addWidget(m_modeButton);
     root->addWidget(warning);
     root->addStretch();
@@ -152,6 +159,8 @@ void LoginWindow::setVaultExists(bool exists) {
         m_actionButton->setText(QStringLiteral("Unlock Vault"));
         m_modeButton->setText(QStringLiteral("Create New Vault"));
         m_modeButton->show();
+        m_helloButton->setVisible(
+            WindowsHelloUnlock::isPlatformSupported() && WindowsHelloUnlock::isConfigured());
     }
 }
 

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "models/FillTrustLevel.h"
+
 #include <QString>
 
 namespace OriginMatcher {
@@ -8,6 +10,6 @@ QString normalizeHost(const QString& host);
 bool pageOriginMatchesCredentialUrl(
     const QString& pageOrigin,
     const QString& credentialUrl,
-    bool allowSubdomains = false);
+    FillTrustLevel trustLevel = FillTrustLevel::ExactOrigin);
 
 } // namespace OriginMatcher
