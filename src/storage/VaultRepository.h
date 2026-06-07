@@ -27,13 +27,38 @@ public:
 
     bool changeMasterPassword(
         const QByteArray& currentKey,
-        const QString& newPassword);
+        const QString& newPassword,
+        QByteArray& newKeyOut);
 
-    bool exportEncryptedBackup(const QByteArray& key, const QString& destPath);
-    bool importEncryptedBackup(const QString& srcPath, const QString& newMasterPassword);
+    bool migrateDomainBoundCrypto(const QByteArray& key);
+
+    bool exportEncryptedBackupV2(const QString& destPath, const QString& password);
+    bool exportEncryptedBackupLegacy(const QByteArray& key, const QString& destPath);
+
+    static bool restoreFromBackup(
+        const QString& backupPath,
+        const QString& password,
+        const QString& liveVaultPath,
+        QString* errorOut = nullptr);
+
+    static bool restoreLegacyBackupInSession(
+        const QString& backupPath,
+        const QByteArray& sessionKey,
+        const QString& liveVaultPath,
+        QString* errorOut = nullptr);
+
+    static bool validateVaultFile(const QString& path, QString* errorOut = nullptr);
 
 private:
+    static bool installValidatedPlaintextVault(
+        const QString& tempPath,
+        const QString& liveVaultPath,
+        QString* errorOut);
     bool storeVaultInfo(const VaultInfo& info);
+    bool writeVerificationToken(const QByteArray& key);
+    bool verificationTokenExists() const;
+    bool cryptoFormatIsV2() const;
+    void setCryptoFormatV2();
 
     Database& m_db;
 };

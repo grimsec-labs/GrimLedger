@@ -6,13 +6,20 @@
 #include "ui/SettingsWindow.h"
 #include "ui/CustomTitleBar.h"
 #include "ui/FramelessResize.h"
+#include "ui/FolderPickerDialog.h"
 #include "storage/VaultRepository.h"
 #include "storage/NoteRepository.h"
+#include "storage/AttachmentRepository.h"
+#include "utils/ImageSanitizer.h"
 #include "search/SearchEngine.h"
 #include "models/Tag.h"
 #include "security/PasswordManager.h"
 #include "utils/TimeUtils.h"
 #include "utils/Theme.h"
+#include "utils/DialogUtils.h"
+#include "ui/GrimInputDialog.h"
+#include "utils/SecurityLimits.h"
+#include "ui/GrimFileDialog.h"
 #include "security/CryptoManager.h"
 #include "security/VaultSession.h"
 
@@ -23,22 +30,24 @@
 #include <QStatusBar>
 #include <QLabel>
 #include <QPushButton>
-#include <QFileDialog>
-#include <QMessageBox>
-#include <QInputDialog>
 #include <QFile>
+#include <QFileInfo>
 #include <QTimer>
 #include <QEvent>
 #include <QAction>
 #include <QKeySequence>
 #include <QApplication>
+#include <QDialog>
 
 MainWindow::MainWindow(Database& db, VaultSession& session, QWidget* parent)
     : QMainWindow(parent)
     , m_db(db)
-    , m_session(session) {
+    , m_session(session)
+    , m_accent(Theme::savedAccent())
+    , m_attachments(db) {
     m_notes = std::make_unique<NoteRepository>(m_db);
     m_vault = std::make_unique<VaultRepository>(m_db);
+    m_notes->ensureDefaultFolder();
     buildUi();
     loadNotes();
     refreshSidebar();
@@ -48,7 +57,7 @@ MainWindow::MainWindow(Database& db, VaultSession& session, QWidget* parent)
         m_autolockLabel->setText(
             QStringLiteral("Auto-lock: %1 min").arg(m_session.autoLockMinutes()));
     });
-    connect(&m_session, &VaultSession::locked, this, &MainWindow::onLockVault);
+    connect(&m_session, &VaultSession::lockRequested, this, &MainWindow::onLockVault);
 
     QTimer* previewTimer = new QTimer(this);
     previewTimer->setInterval(400);
@@ -68,7 +77,8 @@ bool MainWindow::nativeEvent(const QByteArray& eventType, void* message, qintptr
 void MainWindow::buildUi() {
     setWindowFlags(Qt::Window | Qt::FramelessWindowHint);
     setWindowTitle(QStringLiteral("GrimLedger — Encrypted Markdown Vault"));
-    setMinimumSize(1100, 700);
+    setMinimumSize(1100, 860);
+    resize(1280, 920);
     setObjectName(QStringLiteral("MainWindow"));
 
     auto* shell = new QWidget(this);
@@ -94,8 +104,8 @@ void MainWindow::buildUi() {
     connect(m_noteList, &NoteList::noteSelected, this, &MainWindow::onNoteSelected);
     connect(m_noteList, &NoteList::newNoteRequested, this, &MainWindow::onNewNote);
     connect(m_noteList, &NoteList::deleteNoteRequested, this, [this](qint64 id) {
-        if (QMessageBox::question(this, QStringLiteral("Delete"),
-                QStringLiteral("Delete this note permanently?")) == QMessageBox::Yes) {
+        if (DialogUtils::question(this, QStringLiteral("Delete"),
+                QStringLiteral("Delete this note permanently?"))) {
             m_notes->deleteNote(id);
             if (m_currentNoteId == id) {
                 m_currentNoteId = 0;
@@ -107,11 +117,28 @@ void MainWindow::buildUi() {
         }
     });
     connect(m_noteList, &NoteList::duplicateNoteRequested, this, [this](qint64 id) {
-        const qint64 newId = m_notes->duplicateNote(id, m_session.key());
-        if (newId > 0) {
-            loadNotes();
-            loadNote(newId);
+        const auto source = m_notes->getNote(id, m_session.key());
+        if (!source) {
+            return;
         }
+
+        Note copy = *source;
+        copy.id = 0;
+        copy.title += QStringLiteral(" (copy)");
+        const qint64 newId = m_notes->createNote(copy, m_session.key());
+        if (newId <= 0) {
+            return;
+        }
+
+        const auto idMap = m_attachments.duplicateAttachments(id, newId);
+        if (!idMap.isEmpty()) {
+            Note updated = *m_notes->getNote(newId, m_session.key());
+            updated.body = m_attachments.remapAttachmentUrls(updated.body, idMap);
+            m_notes->updateNote(updated, m_session.key());
+        }
+
+        loadNotes();
+        loadNote(newId);
     });
     connect(m_noteList, &NoteList::searchChanged, this, &MainWindow::onSearchChanged);
     connect(m_noteList, &NoteList::sortChanged, this, &MainWindow::onSortChanged);
@@ -141,12 +168,23 @@ void MainWindow::buildUi() {
 
     connect(m_editor, &NoteEditor::contentChanged, this, &MainWindow::onEditorChanged);
     connect(m_editor, &NoteEditor::saveRequested, this, &MainWindow::onSaveNote);
+    connect(m_editor, &NoteEditor::saveAndCloseRequested, this, &MainWindow::onSaveAndClose);
     connect(m_editor, &NoteEditor::favoriteToggled, this, &MainWindow::onFavoriteToggled);
+    connect(m_editor, &NoteEditor::imageInsertRequested, this, &MainWindow::onInsertImage);
+
+    m_emptyEditorLabel = new QLabel(
+        QStringLiteral("◈ Select a note from the list, or click + New Note to begin."), this);
+    m_emptyEditorLabel->setObjectName(QStringLiteral("EmptyEditor"));
+    m_emptyEditorLabel->setAlignment(Qt::AlignCenter);
+    m_emptyEditorLabel->setWordWrap(true);
 
     mainLayout->addLayout(viewRow);
     mainLayout->addWidget(m_editorSplitter, 1);
+    mainLayout->addWidget(m_emptyEditorLabel, 1);
+    m_emptyEditorLabel->hide();
 
     m_settingsPanel = new SettingsWindow(this);
+    m_settingsPanel->setAccentColor(m_accent);
     m_settingsPanel->hide();
     connect(m_settingsPanel, &SettingsWindow::backRequested, this, &MainWindow::hideSettings);
     connect(m_settingsPanel, &SettingsWindow::accentChanged, this, &MainWindow::onAccentChanged);
@@ -209,7 +247,7 @@ void MainWindow::buildUi() {
     auto* saveAction = new QAction(this);
     saveAction->setShortcut(QKeySequence::Save);
     saveAction->setShortcutContext(Qt::ApplicationShortcut);
-    connect(saveAction, &QAction::triggered, this, &MainWindow::onSaveNote);
+    connect(saveAction, &QAction::triggered, this, &MainWindow::onSaveAndClose);
     addAction(saveAction);
 
     applyAccent(m_accent);
@@ -315,6 +353,10 @@ void MainWindow::loadNote(qint64 id) {
     if (!note) return;
 
     m_currentNoteId = id;
+    m_currentFolderId = note->folderId > 0
+        ? note->folderId
+        : m_notes->defaultFolderId();
+    openNoteEditor();
     m_editor->setTitle(note->title);
     m_editor->setBody(note->body);
     m_editor->setTags(note->tags.join(QStringLiteral(", ")));
@@ -343,7 +385,7 @@ void MainWindow::onSectionSelected(SidebarSection section, qint64 id) {
 
 void MainWindow::onNoteSelected(qint64 id) {
     if (m_currentNoteId > 0 && m_currentNoteId != id) {
-        onSaveNote();
+        saveCurrentNote(false, false);
     }
     loadNote(id);
 }
@@ -352,6 +394,7 @@ void MainWindow::onNewNote() {
     Note n;
     n.title = QStringLiteral("Untitled Note");
     n.body = QStringLiteral("# New Note\n\nBegin writing...");
+    n.folderId = m_notes->defaultFolderId();
     const qint64 id = m_notes->createNote(n, m_session.key());
     if (id > 0) {
         loadNotes();
@@ -361,8 +404,58 @@ void MainWindow::onNewNote() {
 }
 
 void MainWindow::onSaveNote() {
+    saveCurrentNote(false, false, false);
+}
+
+void MainWindow::onSaveAndClose() {
+    saveCurrentNote(true, true, true);
+}
+
+bool MainWindow::saveCurrentNote(bool showFolderPicker, bool closeAfter, bool showErrorDialog) {
     if (m_currentNoteId <= 0) {
-        return;
+        if (showFolderPicker) {
+            DialogUtils::information(
+                this,
+                QStringLiteral("Save"),
+                QStringLiteral("Open or create a note before saving."));
+        }
+        return false;
+    }
+
+    qint64 folderId = m_currentFolderId > 0
+        ? m_currentFolderId
+        : m_notes->defaultFolderId();
+    if (folderId <= 0) {
+        folderId = m_notes->ensureDefaultFolder();
+    }
+
+    if (showFolderPicker) {
+        const auto folders = m_notes->listFolders();
+        if (folders.isEmpty()) {
+            DialogUtils::warning(
+                this,
+                QStringLiteral("Save"),
+                QStringLiteral("No folders available. Create a folder first."));
+            return false;
+        }
+
+        FolderPickerDialog dialog(
+            folders,
+            m_notes->defaultFolderId(),
+            folderId,
+            this);
+        if (dialog.exec() != QDialog::Accepted) {
+            return false;
+        }
+
+        folderId = dialog.selectedFolderId();
+        if (folderId <= 0) {
+            return false;
+        }
+
+        if (dialog.setAsDefaultRequested()) {
+            m_notes->setDefaultFolderId(folderId);
+        }
     }
 
     Note n;
@@ -374,23 +467,61 @@ void MainWindow::onSaveNote() {
     }
     n.body = m_editor->body();
     n.isFavorite = m_editor->isFavorite();
+    n.folderId = folderId;
     const QStringList tagParts = m_editor->tags().split(
         ',', Qt::SkipEmptyParts);
     for (const QString& t : tagParts) {
         n.tags.append(t.trimmed());
     }
 
-    if (m_notes->updateNote(n, m_session.key())) {
-        const QDateTime savedAt = QDateTime::currentDateTimeUtc();
-        m_editor->setSavedState(true, savedAt);
-        m_savedLabel->setText(
-            QStringLiteral("Last saved: %1").arg(TimeUtils::formatTimestamp(savedAt)));
-        refreshSidebar();
-        loadNotes();
+    if (!m_notes->updateNote(n, m_session.key())) {
+        m_editor->showSaveError(QStringLiteral("try again"));
+        if (showErrorDialog) {
+            DialogUtils::warning(
+                this,
+                QStringLiteral("Save Failed"),
+                QStringLiteral("Could not save the note. Please try again."));
+        }
+        return false;
+    }
+
+    m_currentFolderId = folderId;
+    const QDateTime savedAt = QDateTime::currentDateTimeUtc();
+    m_editor->setSavedState(true, savedAt);
+    m_savedLabel->setText(
+        QStringLiteral("Last saved: %1").arg(TimeUtils::formatTimestamp(savedAt)));
+    refreshSidebar();
+    loadNotes();
+
+    if (closeAfter) {
+        closeNoteEditor();
+    } else {
         m_noteList->selectNote(m_currentNoteId);
         updateStatusBar();
         updatePreview();
     }
+
+    return true;
+}
+
+void MainWindow::closeNoteEditor() {
+    m_currentNoteId = 0;
+    m_currentFolderId = 0;
+    m_editor->setTitle(QString());
+    m_editor->setBody(QString());
+    m_editor->setTags(QString());
+    m_editor->setFavorite(false);
+    m_editor->setSavedState(true);
+    m_editorSplitter->hide();
+    m_emptyEditorLabel->show();
+    m_noteList->clearSelection();
+    m_savedLabel->setText(QStringLiteral("Last saved: —"));
+    updateStatusBar();
+}
+
+void MainWindow::openNoteEditor() {
+    m_emptyEditorLabel->hide();
+    m_editorSplitter->show();
 }
 
 void MainWindow::onEditorChanged() {
@@ -410,8 +541,14 @@ void MainWindow::onSortChanged(NoteSortField field, bool descending) {
 }
 
 void MainWindow::onLockVault() {
-    onSaveNote();
+    if (m_lockingVault || !m_session.isUnlocked()) {
+        return;
+    }
+
+    m_lockingVault = true;
+    saveCurrentNote(false, false, false);
     m_session.lock();
+    m_lockingVault = false;
     emit vaultLocked();
 }
 
@@ -434,21 +571,18 @@ void MainWindow::onViewModeChanged(int index) {
 }
 
 void MainWindow::onFavoriteToggled(bool favorited) {
-    if (m_currentNoteId <= 0) return;
-    const auto note = m_notes->getNote(m_currentNoteId, m_session.key());
-    if (!note) return;
-    Note n = *note;
-    n.isFavorite = favorited;
-    m_notes->updateNote(n, m_session.key());
-    loadNotes();
+    Q_UNUSED(favorited);
+    if (m_currentNoteId <= 0) {
+        return;
+    }
+    saveCurrentNote(false, false, false);
 }
 
 void MainWindow::onNewFolder() {
     bool ok = false;
-    const QString name = QInputDialog::getText(
+    const QString name = GrimInputDialog::getText(
         this, QStringLiteral("New Folder"),
-        QStringLiteral("Folder name:"),
-        QLineEdit::Normal, QString(), &ok);
+        QStringLiteral("Folder name:"), &ok);
     if (ok && !name.isEmpty()) {
         m_notes->createFolder(name);
         refreshSidebar();
@@ -476,6 +610,7 @@ void MainWindow::onAccentChanged(const QString& hex) {
 
 void MainWindow::applyAccent(const QString& hex) {
     m_accent = hex;
+    Theme::saveAccent(hex);
     m_editor->setAccentColor(QColor(hex));
     m_preview->setAccentColor(hex);
     if (QApplication* app = qApp) {
@@ -487,51 +622,61 @@ void MainWindow::applyAccent(const QString& hex) {
 void MainWindow::onChangePassword(const QString& current, const QString& newPass) {
     QString err;
     if (!PasswordManager::isValidVaultPassword(newPass, &err)) {
-        QMessageBox::warning(this, QStringLiteral("Password"), err);
+        DialogUtils::warning(this, QStringLiteral("Password"), err);
         return;
     }
 
     const QByteArray currentKey = m_session.key();
-    auto testKey = CryptoManager::deriveKey(
-        current,
-        m_vault->loadVaultInfo()->salt,
-        m_vault->loadVaultInfo()->kdfParams);
+    const auto vaultInfo = m_vault->loadVaultInfo();
+    if (!vaultInfo) {
+        DialogUtils::warning(this, QStringLiteral("Password"),
+            QStringLiteral("Vault metadata is unavailable."));
+        return;
+    }
 
+    auto testKey = CryptoManager::deriveKey(current, vaultInfo->salt, vaultInfo->kdfParams);
     if (!testKey || *testKey != currentKey) {
-        QMessageBox::warning(
+        DialogUtils::warning(
             this, QStringLiteral("Password"),
             QStringLiteral("Current password is incorrect."));
-        if (testKey) CryptoManager::secureZero(*testKey);
+        if (testKey) {
+            CryptoManager::secureZero(*testKey);
+        }
         return;
     }
     CryptoManager::secureZero(*testKey);
 
-    if (!m_vault->changeMasterPassword(currentKey, newPass)) {
-        QMessageBox::warning(
+    QByteArray newKey;
+    if (!m_vault->changeMasterPassword(currentKey, newPass, newKey)) {
+        DialogUtils::warning(
             this, QStringLiteral("Password"),
             QStringLiteral("Failed to change password. Vault unchanged."));
         return;
     }
 
-    auto newKey = CryptoManager::deriveKey(
-        newPass,
-        m_vault->loadVaultInfo()->salt,
-        m_vault->loadVaultInfo()->kdfParams);
-    if (newKey) {
-        m_session.setKey(std::move(*newKey));
-    }
+    m_session.setKey(std::move(newKey));
 
-    QMessageBox::information(
+    DialogUtils::information(
         this, QStringLiteral("Password"),
         QStringLiteral("Master password changed successfully."));
 }
 
 void MainWindow::onBackupVault(const QString& path) {
-    if (m_vault->exportEncryptedBackup(m_session.key(), path)) {
-        QMessageBox::information(this, QStringLiteral("Backup"),
-            QStringLiteral("Encrypted backup saved."));
+    bool ok = false;
+    const QString password = GrimInputDialog::getPassword(
+        this,
+        QStringLiteral("Backup Vault"),
+        QStringLiteral("Enter the master password to encrypt this backup:"),
+        &ok);
+    if (!ok || password.isEmpty()) {
+        return;
+    }
+
+    if (m_vault->exportEncryptedBackupV2(path, password)) {
+        DialogUtils::information(this, QStringLiteral("Backup"),
+            QStringLiteral("Encrypted backup saved (GRIMBKUP2)."));
     } else {
-        QMessageBox::warning(this, QStringLiteral("Backup"),
+        DialogUtils::warning(this, QStringLiteral("Backup"),
             QStringLiteral("Backup failed."));
     }
 }
@@ -539,52 +684,80 @@ void MainWindow::onBackupVault(const QString& path) {
 void MainWindow::onRestoreVault(const QString& path) {
     QFile f(path);
     if (!f.open(QIODevice::ReadOnly)) {
-        QMessageBox::warning(this, QStringLiteral("Restore"),
+        DialogUtils::warning(this, QStringLiteral("Restore"),
             QStringLiteral("Could not open backup file."));
+        return;
+    }
+    if (f.size() > SecurityLimits::kMaxBackupFileBytes) {
+        DialogUtils::warning(this, QStringLiteral("Restore"),
+            QStringLiteral("Backup file is too large."));
         return;
     }
 
     const QByteArray magic = f.read(9);
-    if (magic != QByteArray("GRIMBKUP1", 9)) {
-        QMessageBox::warning(this, QStringLiteral("Restore"),
+    f.close();
+
+    QString error;
+    bool restored = false;
+
+    if (magic == QByteArray("GRIMBKUP2", 9)) {
+        bool ok = false;
+        const QString password = GrimInputDialog::getPassword(
+            this,
+            QStringLiteral("Restore Backup"),
+            QStringLiteral("Enter the master password used when this backup was created:"),
+            &ok);
+        if (!ok || password.isEmpty()) {
+            return;
+        }
+
+        m_db.close();
+        restored = VaultRepository::restoreFromBackup(path, password, m_db.path(), &error);
+        if (!m_db.open(m_db.path())) {
+            DialogUtils::critical(this, QStringLiteral("Restore"),
+                QStringLiteral("Restored vault could not be reopened."));
+            return;
+        }
+        m_vault = std::make_unique<VaultRepository>(m_db);
+    } else if (magic == QByteArray("GRIMBKUP1", 9)) {
+        if (!DialogUtils::question(
+                this,
+                QStringLiteral("Restore Legacy Backup"),
+                QStringLiteral("This is a legacy session-bound backup. Restore only if it was created from this vault.\n\nContinue?"))) {
+            return;
+        }
+
+        m_db.close();
+        restored = VaultRepository::restoreLegacyBackupInSession(
+            path, m_session.key(), m_db.path(), &error);
+        if (!m_db.open(m_db.path())) {
+            DialogUtils::critical(this, QStringLiteral("Restore"),
+                QStringLiteral("Restored vault could not be reopened."));
+            return;
+        }
+        m_vault = std::make_unique<VaultRepository>(m_db);
+    } else {
+        DialogUtils::warning(this, QStringLiteral("Restore"),
             QStringLiteral("Invalid backup file."));
         return;
     }
 
-    const auto decrypted = CryptoManager::decrypt(f.readAll(), m_session.key());
-    if (!decrypted) {
-        QMessageBox::warning(this, QStringLiteral("Restore"),
-            QStringLiteral("Could not decrypt backup. Wrong vault or corrupted file."));
-        return;
-    }
-
-    m_db.close();
-    QFile vaultFile(m_db.path());
-    vaultFile.remove();
-    if (!vaultFile.open(QIODevice::WriteOnly)) {
-        QMessageBox::critical(this, QStringLiteral("Restore"),
-            QStringLiteral("Could not write vault file."));
-        return;
-    }
-    QByteArray plain = *decrypted;
-    vaultFile.write(plain);
-    vaultFile.close();
-    CryptoManager::secureZero(plain);
-
-    if (!m_db.open(m_db.path())) {
-        QMessageBox::critical(this, QStringLiteral("Restore"),
-            QStringLiteral("Restored file could not be opened."));
+    if (!restored) {
+        DialogUtils::warning(this, QStringLiteral("Restore"),
+            error.isEmpty()
+                ? QStringLiteral("Restore failed. Your original vault was not changed.")
+                : error);
         return;
     }
 
     loadNotes();
     refreshSidebar();
-    QMessageBox::information(this, QStringLiteral("Restore"),
+    DialogUtils::information(this, QStringLiteral("Restore"),
         QStringLiteral("Vault restored from backup."));
 }
 
 void MainWindow::onImportMarkdown() {
-    const QStringList files = QFileDialog::getOpenFileNames(
+    const QStringList files = GrimFileDialog::getOpenFileNames(
         this, QStringLiteral("Import Markdown"),
         QString(),
         QStringLiteral("Markdown (*.md)"));
@@ -596,32 +769,54 @@ void MainWindow::onImportMarkdown() {
     }
     loadNotes();
     refreshSidebar();
-    QMessageBox::information(
+    DialogUtils::information(
         this, QStringLiteral("Import"),
         QStringLiteral("Imported %1 file(s).").arg(count));
 }
 
 void MainWindow::onExportNote() {
     if (m_currentNoteId <= 0) {
-        QMessageBox::information(this, QStringLiteral("Export"),
+        DialogUtils::information(this, QStringLiteral("Export"),
             QStringLiteral("Select a note first."));
         return;
     }
-    const QString path = QFileDialog::getSaveFileName(
+    const QString path = GrimFileDialog::getSaveFileName(
         this, QStringLiteral("Export Note"),
         QStringLiteral("note.md"),
         QStringLiteral("Markdown (*.md)"));
-    if (!path.isEmpty()) {
-        m_notes->exportMarkdownFile(m_currentNoteId, path, m_session.key());
+    if (path.isEmpty()) {
+        return;
     }
+
+    const auto note = m_notes->getNote(m_currentNoteId, m_session.key());
+    if (!note) {
+        DialogUtils::warning(this, QStringLiteral("Export"),
+            QStringLiteral("Could not read the note."));
+        return;
+    }
+
+    const QFileInfo info(path);
+    const QString imagesDir = info.absolutePath() + QLatin1Char('/')
+        + info.completeBaseName() + QStringLiteral("_images");
+    const QString body = m_attachments.rewriteBodyForExport(
+        note->body, m_currentNoteId, imagesDir, m_session.key());
+
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        DialogUtils::warning(this, QStringLiteral("Export"),
+            QStringLiteral("Could not write export file."));
+        return;
+    }
+    f.write(body.toUtf8());
+    f.close();
 }
 
 void MainWindow::onExportAllMarkdown() {
-    const QString dir = QFileDialog::getExistingDirectory(
+    const QString dir = GrimFileDialog::getExistingDirectory(
         this, QStringLiteral("Export All Notes"));
     if (!dir.isEmpty()) {
         m_notes->exportAllMarkdown(dir, m_session.key());
-        QMessageBox::information(this, QStringLiteral("Export"),
+        DialogUtils::information(this, QStringLiteral("Export"),
             QStringLiteral("Notes exported as Markdown."));
     }
 }
@@ -630,8 +825,71 @@ void MainWindow::onExportEncryptedArchive(const QString& path) {
     onBackupVault(path);
 }
 
+MarkdownRenderer::ImageUrlResolver MainWindow::imageResolver() const {
+    const qint64 noteId = m_currentNoteId;
+    const QByteArray key = m_session.key();
+    return [this, noteId, key](const QString& url) -> QString {
+        if (!AttachmentRepository::isGrimAttachmentUrl(url) || noteId <= 0 || key.isEmpty()) {
+            return QString();
+        }
+        const QString attachmentId = AttachmentRepository::attachmentIdFromUrl(url);
+        const auto data = m_attachments.loadAttachment(attachmentId, noteId, key);
+        if (!data) {
+            return QString();
+        }
+        return QStringLiteral("data:image/png;base64,") + data->toBase64();
+    };
+}
+
 void MainWindow::updatePreview() {
-    m_preview->setMarkdown(m_editor->body());
+    m_preview->setMarkdown(m_editor->body(), imageResolver());
+}
+
+void MainWindow::onInsertImage() {
+    if (m_currentNoteId <= 0) {
+        DialogUtils::information(
+            this,
+            QStringLiteral("Insert Image"),
+            QStringLiteral("Open or create a note before inserting an image."));
+        return;
+    }
+
+    const QString path = GrimFileDialog::getOpenFileName(
+        this,
+        QStringLiteral("Insert Image"),
+        QString(),
+        QStringLiteral("Images (*.png *.jpg *.jpeg *.bmp *.webp *.gif)"));
+    if (path.isEmpty()) {
+        return;
+    }
+
+    SanitizedImage image;
+    QString err;
+    if (!ImageSanitizer::sanitizeFromFile(path, image, &err)) {
+        DialogUtils::warning(this, QStringLiteral("Insert Image"), err);
+        return;
+    }
+
+    const QString baseName = QFileInfo(path).completeBaseName();
+    const QString attachmentId = m_attachments.storeAttachment(
+        m_currentNoteId,
+        image.pngData,
+        QStringLiteral("image/png"),
+        baseName,
+        m_session.key());
+    if (attachmentId.isEmpty()) {
+        DialogUtils::warning(
+            this,
+            QStringLiteral("Insert Image"),
+            QStringLiteral("Could not store image in the encrypted vault."));
+        return;
+    }
+
+    const QString markdown = QStringLiteral("![%1](grim://attachment/%2)\n")
+        .arg(baseName, attachmentId);
+    m_editor->insertAtCursor(markdown);
+    updatePreview();
+    onEditorChanged();
 }
 
 void MainWindow::updateStatusBar() {

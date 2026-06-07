@@ -1,5 +1,6 @@
 #include "storage/NoteRepository.h"
 #include "security/CryptoManager.h"
+#include "utils/SecurityLimits.h"
 #include "utils/TimeUtils.h"
 
 #include <QFile>
@@ -12,14 +13,30 @@
 NoteRepository::NoteRepository(Database& db)
     : m_db(db) {}
 
-QByteArray NoteRepository::encryptField(const QString& text, const QByteArray& key) const {
-    const auto enc = CryptoManager::encrypt(text.toUtf8(), key);
+QByteArray NoteRepository::encryptNoteField(
+    const QString& text,
+    qint64 noteId,
+    bool isBody,
+    const QByteArray& key) const {
+    const QByteArray aad = isBody
+        ? CryptoManager::noteBodyAssociatedData(noteId)
+        : CryptoManager::noteTitleAssociatedData(noteId);
+    const auto enc = CryptoManager::encryptField(text.toUtf8(), key, aad);
     return enc.value_or(QByteArray());
 }
 
-QString NoteRepository::decryptField(const QByteArray& blob, const QByteArray& key) const {
-    const auto dec = CryptoManager::decrypt(blob, key);
-    if (!dec) return QString();
+QString NoteRepository::decryptNoteField(
+    const QByteArray& blob,
+    qint64 noteId,
+    bool isBody,
+    const QByteArray& key) const {
+    const QByteArray aad = isBody
+        ? CryptoManager::noteBodyAssociatedData(noteId)
+        : CryptoManager::noteTitleAssociatedData(noteId);
+    const auto dec = CryptoManager::decryptField(blob, key, aad);
+    if (!dec) {
+        return QString();
+    }
     return QString::fromUtf8(*dec);
 }
 
@@ -88,7 +105,8 @@ QVector<Note> NoteRepository::listNotes(
         Note n;
         n.id = sqlite3_column_int64(stmt, 0);
         const auto* tPtr = reinterpret_cast<const char*>(sqlite3_column_blob(stmt, 1));
-        n.title = decryptField(QByteArray(tPtr, sqlite3_column_bytes(stmt, 1)), key);
+        n.title = decryptNoteField(
+            QByteArray(tPtr, sqlite3_column_bytes(stmt, 1)), n.id, false, key);
         // Body not loaded in list view for performance — only title needed.
         n.folderId = sqlite3_column_int64(stmt, 3);
         n.createdAt = TimeUtils::fromUnix(sqlite3_column_int64(stmt, 4));
@@ -129,10 +147,14 @@ std::optional<Note> NoteRepository::getNote(qint64 id, const QByteArray& key) co
         Note n;
         n.id = id;
         const auto* tPtr = reinterpret_cast<const char*>(sqlite3_column_blob(stmt, 0));
-        n.title = decryptField(QByteArray(tPtr, sqlite3_column_bytes(stmt, 0)), key);
+        n.title = decryptNoteField(
+            QByteArray(tPtr, sqlite3_column_bytes(stmt, 0)), n.id, false, key);
         const auto* bPtr = reinterpret_cast<const char*>(sqlite3_column_blob(stmt, 1));
-        n.body = decryptField(QByteArray(bPtr, sqlite3_column_bytes(stmt, 1)), key);
-        n.folderId = sqlite3_column_int64(stmt, 2);
+        n.body = decryptNoteField(
+            QByteArray(bPtr, sqlite3_column_bytes(stmt, 1)), n.id, true, key);
+        n.folderId = sqlite3_column_type(stmt, 2) == SQLITE_NULL
+            ? 0
+            : sqlite3_column_int64(stmt, 2);
         n.createdAt = TimeUtils::fromUnix(sqlite3_column_int64(stmt, 3));
         n.updatedAt = TimeUtils::fromUnix(sqlite3_column_int64(stmt, 4));
         n.isFavorite = sqlite3_column_int(stmt, 5) != 0;
@@ -147,11 +169,8 @@ std::optional<Note> NoteRepository::getNote(qint64 id, const QByteArray& key) co
 }
 
 qint64 NoteRepository::createNote(const Note& note, const QByteArray& key) {
-    const QByteArray encTitle = encryptField(note.title, key);
-    const QByteArray encBody = encryptField(note.body, key);
-    if (encTitle.isEmpty() && !note.title.isEmpty()) return 0;
-
     const qint64 now = TimeUtils::toUnix(QDateTime::currentDateTimeUtc());
+    static const QByteArray kPlaceholder(1, '\0');
 
     sqlite3_stmt* stmt = nullptr;
     const char* sql =
@@ -162,26 +181,37 @@ qint64 NoteRepository::createNote(const Note& note, const QByteArray& key) {
         return 0;
     }
 
-    sqlite3_bind_blob(stmt, 1, encTitle.constData(), encTitle.size(), SQLITE_TRANSIENT);
-    sqlite3_bind_blob(stmt, 2, encBody.constData(), encBody.size(), SQLITE_TRANSIENT);
-    sqlite3_bind_int64(stmt, 3, note.folderId);
+    sqlite3_bind_blob(stmt, 1, kPlaceholder.constData(), kPlaceholder.size(), SQLITE_STATIC);
+    sqlite3_bind_blob(stmt, 2, kPlaceholder.constData(), kPlaceholder.size(), SQLITE_STATIC);
+    bindFolderId(stmt, 3, note.folderId);
     sqlite3_bind_int64(stmt, 4, now);
     sqlite3_bind_int64(stmt, 5, now);
     sqlite3_bind_int(stmt, 6, note.isFavorite ? 1 : 0);
 
-    const bool ok = sqlite3_step(stmt) == SQLITE_DONE;
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
+        sqlite3_finalize(stmt);
+        return 0;
+    }
     sqlite3_finalize(stmt);
 
-    if (!ok) return 0;
-
     const qint64 id = sqlite3_last_insert_rowid(m_db.handle());
+    Note persisted = note;
+    persisted.id = id;
+    if (!updateNote(persisted, key)) {
+        deleteNote(id);
+        return 0;
+    }
+
     setNoteTags(id, note.tags);
     return id;
 }
 
 bool NoteRepository::updateNote(const Note& note, const QByteArray& key) {
-    const QByteArray encTitle = encryptField(note.title, key);
-    const QByteArray encBody = encryptField(note.body, key);
+    const QByteArray encTitle = encryptNoteField(note.title, note.id, false, key);
+    const QByteArray encBody = encryptNoteField(note.body, note.id, true, key);
+    if (encTitle.isEmpty() && !note.title.isEmpty()) {
+        return false;
+    }
 
     const qint64 now = TimeUtils::toUnix(QDateTime::currentDateTimeUtc());
 
@@ -196,7 +226,7 @@ bool NoteRepository::updateNote(const Note& note, const QByteArray& key) {
 
     sqlite3_bind_blob(stmt, 1, encTitle.constData(), encTitle.size(), SQLITE_TRANSIENT);
     sqlite3_bind_blob(stmt, 2, encBody.constData(), encBody.size(), SQLITE_TRANSIENT);
-    sqlite3_bind_int64(stmt, 3, note.folderId);
+    bindFolderId(stmt, 3, note.folderId);
     sqlite3_bind_int64(stmt, 4, now);
     sqlite3_bind_int(stmt, 5, note.isFavorite ? 1 : 0);
     sqlite3_bind_int64(stmt, 6, note.id);
@@ -367,13 +397,16 @@ bool NoteRepository::importMarkdownFile(const QString& path, const QByteArray& k
     if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) {
         return false;
     }
+    if (f.size() > SecurityLimits::kMaxMarkdownImportBytes) {
+        return false;
+    }
     const QString content = QString::fromUtf8(f.readAll());
     f.close();
 
     Note n;
     n.title = QFileInfo(path).completeBaseName();
     n.body = content;
-    n.folderId = folderId;
+    n.folderId = folderId > 0 ? folderId : defaultFolderId();
     return createNote(n, key) > 0;
 }
 
@@ -405,4 +438,110 @@ bool NoteRepository::exportAllMarkdown(const QString& dirPath, const QByteArray&
         exportMarkdownFile(full->id, path, key);
     }
     return true;
+}
+
+void NoteRepository::bindFolderId(sqlite3_stmt* stmt, int index, qint64 folderId) const {
+    if (folderId > 0) {
+        sqlite3_bind_int64(stmt, index, folderId);
+    } else {
+        sqlite3_bind_null(stmt, index);
+    }
+}
+
+QString NoteRepository::getAppMetadata(const QString& key) const {
+    sqlite3_stmt* stmt = nullptr;
+    const char* sql = "SELECT value FROM app_metadata WHERE key = ?;";
+    if (sqlite3_prepare_v2(m_db.handle(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        return QString();
+    }
+    sqlite3_bind_text(stmt, 1, key.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+
+    QString value;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        value = QString::fromUtf8(
+            reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0)));
+    }
+    sqlite3_finalize(stmt);
+    return value;
+}
+
+bool NoteRepository::setAppMetadata(const QString& key, const QString& value) {
+    sqlite3_stmt* stmt = nullptr;
+    const char* sql = "INSERT OR REPLACE INTO app_metadata (key, value) VALUES (?, ?);";
+    if (sqlite3_prepare_v2(m_db.handle(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        return false;
+    }
+    sqlite3_bind_text(stmt, 1, key.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, value.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+    const bool ok = sqlite3_step(stmt) == SQLITE_DONE;
+    sqlite3_finalize(stmt);
+    return ok;
+}
+
+qint64 NoteRepository::ensureDefaultFolder() {
+    static constexpr auto kDefaultName = "Inbox";
+
+    // Legacy rows used folder_id=0 which violates the folders foreign key.
+    m_db.execute(QStringLiteral("UPDATE notes SET folder_id = NULL WHERE folder_id = 0;"));
+
+    const auto folders = listFolders();
+    for (const Folder& folder : folders) {
+        if (folder.name.compare(QString::fromUtf8(kDefaultName), Qt::CaseInsensitive) == 0) {
+            const qint64 stored = defaultFolderId();
+            if (stored <= 0) {
+                setDefaultFolderId(folder.id);
+            }
+            return folder.id;
+        }
+    }
+
+    const qint64 created = createFolder(QString::fromUtf8(kDefaultName));
+    if (created > 0) {
+        setDefaultFolderId(created);
+    }
+    return created;
+}
+
+qint64 NoteRepository::defaultFolderId() const {
+    const QString stored = getAppMetadata(QStringLiteral("default_folder_id"));
+    if (stored.isEmpty()) {
+        return 0;
+    }
+
+    const qint64 id = stored.toLongLong();
+    if (id <= 0) {
+        return 0;
+    }
+
+    const auto folder = getFolder(id);
+    return folder.has_value() ? id : 0;
+}
+
+bool NoteRepository::setDefaultFolderId(qint64 folderId) {
+    if (folderId <= 0) {
+        return false;
+    }
+    return setAppMetadata(
+        QStringLiteral("default_folder_id"),
+        QString::number(folderId));
+}
+
+std::optional<Folder> NoteRepository::getFolder(qint64 id) const {
+    sqlite3_stmt* stmt = nullptr;
+    const char* sql = "SELECT id, name, parent_id FROM folders WHERE id = ?;";
+    if (sqlite3_prepare_v2(m_db.handle(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        return std::nullopt;
+    }
+    sqlite3_bind_int64(stmt, 1, id);
+
+    std::optional<Folder> result;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        Folder f;
+        f.id = sqlite3_column_int64(stmt, 0);
+        f.name = QString::fromUtf8(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1)));
+        f.parentId = sqlite3_column_int64(stmt, 2);
+        result = f;
+    }
+    sqlite3_finalize(stmt);
+    return result;
 }

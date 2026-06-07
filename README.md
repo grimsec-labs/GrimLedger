@@ -29,17 +29,20 @@ GrimLedger uses **libsodium** for all cryptographic operations. No custom crypto
 | Layer | Algorithm |
 |-------|-----------|
 | Password hashing / KDF | **Argon2id** (`crypto_pwhash`) |
-| Authenticated encryption | **XChaCha20-Poly1305** (`crypto_secretbox`) |
+| Field encryption (current) | **XChaCha20-Poly1305 AEAD** (`crypto_aead_xchacha20poly1305_ietf`) with domain-bound associated data |
+| Field encryption (legacy) | **XSalsa20-Poly1305** (`crypto_secretbox`) — migrated on unlock |
+| Standalone backups (GRIMBKUP2) | **XChaCha20-Poly1305 AEAD** with password-derived key and header metadata |
 | Random salts / nonces | `randombytes_buf` |
 
 ### How it works
 
 1. On vault creation, a random 16-byte salt is generated and stored in `vault_metadata`.
-2. The master password is derived into a 32-byte key using Argon2id with moderate cost parameters.
-3. Each note title and body is encrypted independently with a unique 24-byte nonce prepended to the ciphertext.
+2. The master password is derived into a 32-byte key using Argon2id with moderate cost parameters (validated on load).
+3. Each note title, body, and attachment is encrypted with a unique nonce and domain-bound AEAD context (note id, field name, or attachment id).
 4. Only encrypted BLOBs are written to disk — **no plaintext notes** are stored in the database file.
 5. The derived key lives in `VaultSession` while unlocked and is zeroed on lock.
 6. A verification token (`GRIMLEDGER_OK`) encrypted with the master key validates unlock attempts without storing the password.
+7. **GRIMBKUP2** backups embed KDF metadata in the file header so a backup plus password can restore on a clean machine.
 
 ### Security-sensitive design rules
 
@@ -57,7 +60,8 @@ GrimLedger uses **libsodium** for all cryptographic operations. No custom crypto
 - **Forgotten master passwords cannot be recovered.** There is no backdoor, reset, or key escrow.
 - Decrypted note content exists in RAM while editing. GrimLedger zeroes keys on lock, but full memory-scrubbing of all plaintext fragments is not guaranteed (Qt `QString` is immutable/shared).
 - The SQLite database file itself is not SQLCipher-encrypted; security relies on per-field encryption of note content.
-- Encrypted backups are protected by your current vault key. Store backups securely.
+- **GRIMBKUP2** backups use the master password at backup time; legacy **GRIMBKUP1** backups require the same unlocked session key. Store backups securely.
+- Optional **self-destruct after 3 failed logins** is an explicit anti-coercion feature — anyone with login access can trigger it. Back up your vault first.
 - Exporting notes as `.md` writes **plaintext** to disk by design.
 - Auto-lock uses application-level idle detection, not OS-level screen lock.
 - No protection against local malware, keyloggers, or cold-boot attacks.

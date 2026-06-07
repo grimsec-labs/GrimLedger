@@ -1,5 +1,7 @@
 <RCC>
     <qresource prefix="/">
         <file>styles/grimledger_dark.qss</file>
+        <file>icon.png</file>
+        <file>logo.png</file>
     </qresource>
 </RCC>

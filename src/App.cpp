@@ -5,8 +5,9 @@
 #include "storage/VaultRepository.h"
 #include "security/VaultSession.h"
 #include "security/CryptoManager.h"
+#include "utils/DialogUtils.h"
+#include "utils/AppSettings.h"
 
-#include <QMessageBox>
 #include <QFile>
 
 App::App(QObject* parent)
@@ -18,7 +19,7 @@ App::~App() = default;
 
 void App::start() {
     if (!openDatabase()) {
-        QMessageBox::critical(
+        DialogUtils::critical(
             nullptr,
             QStringLiteral("GrimLedger"),
             QStringLiteral("Could not initialize the vault database."));
@@ -41,6 +42,7 @@ void App::showLogin() {
         connect(m_login, &LoginWindow::createVaultRequested, this, &App::onCreateVaultRequested);
     }
 
+    AppSettings::resetFailedUnlockAttempts();
     m_login->setVaultExists(m_vault->vaultExists());
     m_login->clearPassword();
     m_login->show();
@@ -74,19 +76,20 @@ void App::onUnlockRequested(const QString& password) {
         return;
     }
 
+    AppSettings::resetFailedUnlockAttempts();
     m_session->setKey(std::move(key));
+    if (m_login) {
+        m_login->clearPassword();
+    }
     showMain();
 }
 
 void App::onCreateVaultRequested(const QString& password) {
     if (m_vault->vaultExists()) {
-        const auto reply = QMessageBox::warning(
-            m_login,
-            QStringLiteral("Create Vault"),
-            QStringLiteral("A vault already exists. Creating a new vault will erase all existing notes.\n\nContinue?"),
-            QMessageBox::Yes | QMessageBox::No,
-            QMessageBox::No);
-        if (reply != QMessageBox::Yes) {
+        if (!DialogUtils::question(
+                m_login,
+                QStringLiteral("Create Vault"),
+                QStringLiteral("A vault already exists. Creating a new vault will erase all existing notes.\n\nContinue?"))) {
             return;
         }
 
@@ -111,6 +114,9 @@ void App::onCreateVaultRequested(const QString& password) {
     }
 
     m_session->setKey(std::move(key));
+    if (m_login) {
+        m_login->clearPassword();
+    }
     showMain();
 }
 
@@ -119,8 +125,61 @@ void App::onVaultLocked() {
 }
 
 void App::handleAuthFailure() {
+    if (!AppSettings::selfDestructEnabled()) {
+        if (m_login) {
+            m_login->showError(QStringLiteral("Incorrect master password."));
+            m_login->clearPassword();
+        }
+        return;
+    }
+
+    AppSettings::incrementFailedUnlockAttempts();
+    const int remaining = AppSettings::kMaxFailedUnlockAttempts
+        - AppSettings::failedUnlockAttempts();
+
+    if (remaining > 0) {
+        if (m_login) {
+            m_login->showError(
+                QStringLiteral("Incorrect master password. %1 attempt(s) remaining.")
+                    .arg(remaining));
+            m_login->clearPassword();
+        }
+        return;
+    }
+
+    destroyVaultAfterFailedAttempts();
+}
+
+void App::destroyVaultAfterFailedAttempts() {
+    AppSettings::resetFailedUnlockAttempts();
+    m_session->lock();
+
+    if (m_main) {
+        m_main->hide();
+    }
+
+    m_db->close();
+    QFile::remove(m_db->path());
+    if (!m_db->open(m_db->path())) {
+        DialogUtils::critical(
+            m_login,
+            QStringLiteral("Vault Destroyed"),
+            QStringLiteral("Three failed unlock attempts detected, but the vault file could not be removed."));
+        return;
+    }
+
+    m_vault = std::make_unique<VaultRepository>(*m_db);
+
+    DialogUtils::critical(
+        m_login,
+        QStringLiteral("Vault Destroyed"),
+        QStringLiteral("Three failed unlock attempts. The vault has been permanently deleted."));
+
     if (m_login) {
-        m_login->showError(QStringLiteral("Incorrect master password."));
+        m_login->setVaultExists(false);
         m_login->clearPassword();
+        m_login->show();
+        m_login->raise();
+        m_login->activateWindow();
     }
 }

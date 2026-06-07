@@ -15,6 +15,7 @@ public:
     void setTitle(const QString& title);
     void setSubtitle(const QString& subtitle);
     void setMaximizeEnabled(bool enabled);
+    void setDialogMode(bool enabled);
 
 protected:
     void mousePressEvent(QMouseEvent* event) override;
@@ -36,4 +37,5 @@ private:
     QPushButton* m_maxButton = nullptr;
     QPushButton* m_closeButton = nullptr;
     bool m_maximizeEnabled = true;
+    bool m_dialogMode = false;
 };

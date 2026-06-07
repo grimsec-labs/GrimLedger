@@ -49,6 +49,7 @@ endif()
 FetchContent_Declare(
     sqlite3
     URL https://www.sqlite.org/2024/sqlite-amalgamation-3460100.zip
+    URL_HASH SHA256=77823cb110929c2bcb0f5d48e4833b5c59a8a6e40cdea3936b99e199dbbe5784
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 FetchContent_MakeAvailable(sqlite3)
@@ -71,16 +72,26 @@ set(SOURCES
     src/ui/SettingsWindow.cpp
     src/ui/CustomTitleBar.cpp
     src/ui/FramelessResize.cpp
+    src/ui/FolderPickerDialog.cpp
+    src/ui/GrimDialog.cpp
+    src/ui/GrimMessageDialog.cpp
+    src/ui/GrimInputDialog.cpp
+    src/ui/GrimFileDialog.cpp
     src/security/CryptoManager.cpp
     src/security/PasswordManager.cpp
     src/security/VaultSession.cpp
     src/storage/Database.cpp
+    src/storage/DbTransaction.cpp
     src/storage/NoteRepository.cpp
+    src/storage/AttachmentRepository.cpp
     src/storage/VaultRepository.cpp
     src/search/SearchEngine.cpp
     src/utils/TimeUtils.cpp
     src/utils/SecureStringUtils.cpp
     src/utils/Theme.cpp
+    src/utils/ImageSanitizer.cpp
+    src/utils/AppSettings.cpp
+    src/utils/DialogUtils.cpp
     src/markdown/MarkdownRenderer.cpp
     src/markdown/SyntaxHighlighter.cpp
 )
@@ -96,11 +107,18 @@ set(HEADERS
     src/ui/SettingsWindow.h
     src/ui/CustomTitleBar.h
     src/ui/FramelessResize.h
+    src/ui/FolderPickerDialog.h
+    src/ui/GrimDialog.h
+    src/ui/GrimMessageDialog.h
+    src/ui/GrimInputDialog.h
+    src/ui/GrimFileDialog.h
     src/security/CryptoManager.h
     src/security/PasswordManager.h
     src/security/VaultSession.h
     src/storage/Database.h
+    src/storage/DbTransaction.h
     src/storage/NoteRepository.h
+    src/storage/AttachmentRepository.h
     src/storage/VaultRepository.h
     src/models/Note.h
     src/models/Folder.h
@@ -109,14 +127,24 @@ set(HEADERS
     src/utils/TimeUtils.h
     src/utils/SecureStringUtils.h
     src/utils/Theme.h
+    src/utils/ImageSanitizer.h
+    src/utils/AppSettings.h
+    src/utils/DialogUtils.h
     src/markdown/MarkdownRenderer.h
     src/markdown/SyntaxHighlighter.h
 )
 
+set(GRIMLEDGER_RESOURCES
+    resources/resources.qrc
+)
+if(WIN32)
+    list(APPEND GRIMLEDGER_RESOURCES resources/grimledger.rc)
+endif()
+
 qt_add_executable(GrimLedger
     ${SOURCES}
     ${HEADERS}
-    resources/resources.qrc
+    ${GRIMLEDGER_RESOURCES}
 )
 
 target_include_directories(GrimLedger PRIVATE

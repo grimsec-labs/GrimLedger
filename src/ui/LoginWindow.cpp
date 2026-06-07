@@ -8,6 +8,7 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QLabel>
+#include <QPixmap>
 #include <QProgressBar>
 #include <QStackedWidget>
 #include <QFrame>
@@ -28,7 +29,7 @@ bool LoginWindow::nativeEvent(const QByteArray& eventType, void* message, qintpt
 
 void LoginWindow::buildUi() {
     setObjectName(QStringLiteral("LoginWindow"));
-    setMinimumSize(520, 420);
+    setMinimumSize(520, 560);
 
     auto* outer = new QVBoxLayout(this);
     outer->setContentsMargins(0, 0, 0, 0);
@@ -49,13 +50,12 @@ void LoginWindow::buildUi() {
     outer->addWidget(m_titleBar);
     outer->addWidget(content, 1);
 
-    auto* title = new QLabel(QStringLiteral("GRIMLEDGER"), this);
-    title->setObjectName(QStringLiteral("LoginTitle"));
-    title->setAlignment(Qt::AlignCenter);
-
-    auto* subtitle = new QLabel(QStringLiteral("Encrypted Markdown Vault"), this);
-    subtitle->setObjectName(QStringLiteral("LoginSubtitle"));
-    subtitle->setAlignment(Qt::AlignCenter);
+    auto* logo = new QLabel(this);
+    logo->setObjectName(QStringLiteral("LoginLogo"));
+    logo->setAlignment(Qt::AlignCenter);
+    logo->setPixmap(
+        QPixmap(QStringLiteral(":/logo.png"))
+            .scaled(400, 200, Qt::KeepAspectRatio, Qt::SmoothTransformation));
 
     auto* prompt = new QLabel(QStringLiteral("> enter master key:"), this);
     prompt->setObjectName(QStringLiteral("LoginPrompt"));
@@ -115,9 +115,8 @@ void LoginWindow::buildUi() {
     line->setObjectName(QStringLiteral("Divider"));
 
     root->addStretch();
-    root->addWidget(title);
-    root->addWidget(subtitle);
-    root->addSpacing(12);
+    root->addWidget(logo);
+    root->addSpacing(8);
     root->addWidget(line);
     root->addSpacing(12);
     root->addWidget(prompt);

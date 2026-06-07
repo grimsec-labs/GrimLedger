@@ -21,6 +21,7 @@ public:
 
     void setNotes(const QVector<Note>& notes);
     void selectNote(qint64 id);
+    void clearSelection();
     qint64 currentNoteId() const;
 
 signals:

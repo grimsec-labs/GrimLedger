@@ -9,6 +9,8 @@
 #include <QVector>
 #include <optional>
 
+struct sqlite3_stmt;
+
 enum class NoteSortField {
     Title,
     Created,
@@ -48,10 +50,26 @@ public:
     bool exportMarkdownFile(qint64 noteId, const QString& path, const QByteArray& key) const;
     bool exportAllMarkdown(const QString& dirPath, const QByteArray& key) const;
 
+    qint64 ensureDefaultFolder();
+    qint64 defaultFolderId() const;
+    bool setDefaultFolderId(qint64 folderId);
+    std::optional<Folder> getFolder(qint64 id) const;
+
 private:
-    QByteArray encryptField(const QString& text, const QByteArray& key) const;
-    QString decryptField(const QByteArray& blob, const QByteArray& key) const;
-    QVector<QString> getTagsForNote(qint64 noteId) const;
+    QString getAppMetadata(const QString& key) const;
+    bool setAppMetadata(const QString& key, const QString& value);
+    void bindFolderId(sqlite3_stmt* stmt, int index, qint64 folderId) const;
 
     Database& m_db;
+    QByteArray encryptNoteField(
+        const QString& text,
+        qint64 noteId,
+        bool isBody,
+        const QByteArray& key) const;
+    QString decryptNoteField(
+        const QByteArray& blob,
+        qint64 noteId,
+        bool isBody,
+        const QByteArray& key) const;
+    QVector<QString> getTagsForNote(qint64 noteId) const;
 };

@@ -54,5 +54,5 @@ void VaultSession::resetActivityTimer() {
 }
 
 void VaultSession::onAutoLockTimeout() {
-    lock();
+    emit lockRequested();
 }

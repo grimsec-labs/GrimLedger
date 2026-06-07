@@ -63,6 +63,56 @@
     color: #ff4444;
 }
 
+#EmptyEditor {
+    color: #665566;
+    font-family: "Consolas", monospace;
+    font-size: 14px;
+    background: transparent;
+    padding: 48px;
+}
+
+#GrimDialog {
+    background-color: #0e0e12;
+    border: 1px solid #331111;
+    color: #d4d4dc;
+}
+
+#GrimDialogContent {
+    background-color: #0e0e12;
+    color: #d4d4dc;
+}
+
+#FolderPickerList {
+    background-color: #0e0e12;
+    color: #d4d4dc;
+}
+
+#FolderPickerList::item {
+    padding: 8px 10px;
+}
+
+#FolderPickerList::item:selected {
+    background-color: #1a1010;
+    color: @@ACCENT@@;
+    border-left: 2px solid @@ACCENT@@;
+}
+
+#DialogPrompt {
+    color: #998877;
+    background: transparent;
+}
+
+#DialogIcon {
+    color: @@ACCENT@@;
+    font-size: 20px;
+    background: transparent;
+}
+
+#DialogMessage {
+    color: #d4d4dc;
+    background: transparent;
+}
+
 #LoginContent {
     background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
         stop:0 #08080a, stop:0.5 #0e0a0c, stop:1 #0a0808);
@@ -124,18 +174,9 @@ QToolButton {
     background-color: #0a0a0c;
 }
 
-#LoginTitle {
-    font-family: "Consolas", monospace;
-    font-size: 32px;
-    font-weight: bold;
-    color: @@ACCENT@@;
-    letter-spacing: 6px;
-}
-
-#LoginSubtitle {
-    font-size: 12px;
-    color: #887766;
-    letter-spacing: 2px;
+#LoginLogo {
+    background: transparent;
+    margin-bottom: 4px;
 }
 
 #LoginPrompt {
@@ -167,7 +208,7 @@ QToolButton {
 #PrimaryButton {
     background-color: #1a0808;
     border: 1px solid @@ACCENT@@;
-    color: #ff5533;
+    color: @@ACCENT@@;
     padding: 10px 20px;
     font-weight: bold;
     border-radius: 3px;
@@ -175,7 +216,8 @@ QToolButton {
 
 #PrimaryButton:hover {
     background-color: #2a1010;
-    border-color: #ff4422;
+    border-color: @@ACCENT_HOVER@@;
+    color: @@ACCENT_HOVER@@;
 }
 
 #PrimaryButton:pressed {
@@ -269,7 +311,7 @@ QToolButton {
 #NavList::item:selected, #FolderList::item:selected, #TagList::item:selected {
     background-color: #1a1010;
     border-left: 2px solid @@ACCENT@@;
-    color: #ff6644;
+    color: @@ACCENT@@;
 }
 
 #NavList::item:hover, #FolderList::item:hover, #TagList::item:hover {
@@ -307,7 +349,8 @@ QToolButton {
 
 #NoteListWidget::item:selected {
     background-color: #1a1010;
-    color: #ff8866;
+    color: @@ACCENT@@;
+    border-left: 2px solid @@ACCENT@@;
 }
 
 #NoteListWidget::item:hover {
@@ -339,8 +382,8 @@ QToolButton {
 
 #EditorToolbar QToolButton:hover {
     background: #1a1010;
-    border-color: #442222;
-    color: #ff6644;
+    border-color: @@ACCENT_SOFT@@;
+    color: @@ACCENT@@;
 }
 
 #MarkdownEditor {
@@ -450,6 +493,12 @@ QComboBox {
     border: 1px solid #2a2a30;
     padding: 4px 8px;
     border-radius: 3px;
+    color: #d4d4dc;
+}
+
+QComboBox:hover, QComboBox:focus, QComboBox:on {
+    border-color: @@ACCENT@@;
+    color: @@ACCENT@@;
 }
 
 QComboBox::drop-down {
@@ -458,14 +507,15 @@ QComboBox::drop-down {
 
 QComboBox QAbstractItemView {
     background: #111114;
-    border: 1px solid #2a2a30;
+    border: 1px solid @@ACCENT_SOFT@@;
     selection-background-color: #1a1010;
-}
-
-QMessageBox {
-    background-color: #0e0e12;
-}
-
-QMessageBox QLabel {
+    selection-color: @@ACCENT@@;
     color: #d4d4dc;
+    outline: none;
 }
+
+QComboBox QAbstractItemView::item:selected {
+    background-color: #1a1010;
+    color: @@ACCENT@@;
+}
+

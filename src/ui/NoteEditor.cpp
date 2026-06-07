@@ -46,13 +46,13 @@ void NoteEditor::buildUi() {
         m_isFavorite = !m_isFavorite;
         m_favButton->setText(m_isFavorite ? QStringLiteral("★") : QStringLiteral("☆"));
         emit favoriteToggled(m_isFavorite);
-        onTextChanged();
     });
 
-    m_saveButton = new QPushButton(QStringLiteral("Save"), this);
+    m_saveButton = new QPushButton(QStringLiteral("Save && Close"), this);
     m_saveButton->setObjectName(QStringLiteral("PrimaryButton"));
-    m_saveButton->setToolTip(QStringLiteral("Save note (Ctrl+S)"));
-    connect(m_saveButton, &QPushButton::clicked, this, &NoteEditor::onAutosaveTimer);
+    m_saveButton->setToolTip(
+        QStringLiteral("Pick a folder, save the note, and close the editor (Ctrl+S)"));
+    connect(m_saveButton, &QPushButton::clicked, this, &NoteEditor::saveAndCloseRequested);
 
     header->addWidget(m_titleEdit, 3);
     header->addWidget(m_tagsEdit, 2);
@@ -69,6 +69,7 @@ void NoteEditor::buildUi() {
         {"```", "```\n", "\n```"},
         {">", "> ", ""},
         {"Link", "[", "](url)"},
+        {"Img", "", ""},
         {"•", "- ", ""},
         {"1.", "1. ", ""},
         {"☐", "- [ ] ", ""},
@@ -76,9 +77,14 @@ void NoteEditor::buildUi() {
     for (const auto& a : actions) {
         auto* btn = new QToolButton(m_toolbar);
         btn->setText(QString::fromUtf8(a.label));
-        btn->setProperty("md_before", QString::fromUtf8(a.before));
-        btn->setProperty("md_after", QString::fromUtf8(a.after));
-        connect(btn, &QToolButton::clicked, this, &NoteEditor::onToolbarAction);
+        if (QString::fromUtf8(a.label) == QStringLiteral("Img")) {
+            btn->setToolTip(QStringLiteral("Insert image (metadata stripped)"));
+            connect(btn, &QToolButton::clicked, this, &NoteEditor::imageInsertRequested);
+        } else {
+            btn->setProperty("md_before", QString::fromUtf8(a.before));
+            btn->setProperty("md_after", QString::fromUtf8(a.after));
+            connect(btn, &QToolButton::clicked, this, &NoteEditor::onToolbarAction);
+        }
         m_toolbar->addWidget(btn);
     }
 
@@ -93,7 +99,7 @@ void NoteEditor::buildUi() {
     m_saveLabel = new QLabel(QStringLiteral("Saved"), this);
     m_saveLabel->setObjectName(QStringLiteral("SaveStatus"));
     m_saveLabel->setToolTip(
-        QStringLiteral("Autosaves 1.5s after you stop typing. Click Save or press Ctrl+S to save immediately."));
+        QStringLiteral("Autosaves quietly while you type. Use Save & Close to pick a folder and finish."));
 
     m_autosaveTimer = new QTimer(this);
     m_autosaveTimer->setSingleShot(true);
@@ -175,6 +181,12 @@ int NoteEditor::charCount() const {
     return m_editor->toPlainText().size();
 }
 
+void NoteEditor::insertAtCursor(const QString& text) {
+    QTextCursor cursor = m_editor->textCursor();
+    cursor.insertText(text);
+    m_editor->setTextCursor(cursor);
+}
+
 void NoteEditor::insertMarkdown(const QString& before, const QString& after) {
     QTextCursor cursor = m_editor->textCursor();
     const int start = cursor.selectionStart();
@@ -211,6 +223,12 @@ void NoteEditor::onToolbarAction() {
 
 void NoteEditor::updateCounts() {
     // Counts displayed in MainWindow status bar
+}
+
+void NoteEditor::showSaveError(const QString& message) {
+    m_saved = false;
+    m_saveLabel->setText(QStringLiteral("✗ Save failed — %1").arg(message));
+    m_saveLabel->setStyleSheet(QStringLiteral("color: #ff4444;"));
 }
 
 void NoteEditor::updateSaveIndicator() {

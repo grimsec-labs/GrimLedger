@@ -28,6 +28,7 @@ public:
     void resetActivityTimer();
 
 signals:
+    void lockRequested();
     void locked();
     void activityReset();
 

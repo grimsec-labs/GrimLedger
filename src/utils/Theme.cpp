@@ -3,6 +3,7 @@
 #include <QApplication>
 #include <QColor>
 #include <QFile>
+#include <QSettings>
 
 QString Theme::loadStylesheet(const QString& accentHex) {
     QFile styleFile(QStringLiteral(":/styles/grimledger_dark.qss"));
@@ -23,4 +24,14 @@ QString Theme::loadStylesheet(const QString& accentHex) {
 
 void Theme::apply(QApplication& app, const QString& accentHex) {
     app.setStyleSheet(loadStylesheet(accentHex));
+}
+
+QString Theme::savedAccent() {
+    QSettings settings;
+    return settings.value(QStringLiteral("appearance/accent"), kDefaultAccent).toString();
+}
+
+void Theme::saveAccent(const QString& accentHex) {
+    QSettings settings;
+    settings.setValue(QStringLiteral("appearance/accent"), accentHex);
 }

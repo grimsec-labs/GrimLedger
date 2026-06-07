@@ -72,7 +72,13 @@ void CustomTitleBar::setSubtitle(const QString& subtitle) {
 
 void CustomTitleBar::setMaximizeEnabled(bool enabled) {
     m_maximizeEnabled = enabled;
-    m_maxButton->setVisible(enabled);
+    m_maxButton->setVisible(!m_dialogMode && enabled);
+}
+
+void CustomTitleBar::setDialogMode(bool enabled) {
+    m_dialogMode = enabled;
+    m_minButton->setVisible(!enabled);
+    m_maxButton->setVisible(!enabled && m_maximizeEnabled);
 }
 
 void CustomTitleBar::mousePressEvent(QMouseEvent* event) {

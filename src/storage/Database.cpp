@@ -25,7 +25,18 @@ bool Database::open(const QString& path) {
         return false;
     }
 
-    sqlite3_exec(m_db, "PRAGMA foreign_keys = ON;", nullptr, nullptr, nullptr);
+    if (!execute(QStringLiteral("PRAGMA foreign_keys = ON;"))) {
+        close();
+        return false;
+    }
+    if (!execute(QStringLiteral("PRAGMA secure_delete = ON;"))) {
+        close();
+        return false;
+    }
+    if (!execute(QStringLiteral("PRAGMA trusted_schema = OFF;"))) {
+        close();
+        return false;
+    }
     return initializeSchema();
 }
 
@@ -95,9 +106,20 @@ bool Database::initializeSchema() {
             FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
         );
 
+        CREATE TABLE IF NOT EXISTS note_attachments (
+            id TEXT PRIMARY KEY,
+            note_id INTEGER NOT NULL,
+            encrypted_data BLOB NOT NULL,
+            mime_type TEXT NOT NULL,
+            original_name TEXT,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
+        );
+
         CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated_at DESC);
         CREATE INDEX IF NOT EXISTS idx_notes_favorite ON notes(is_favorite);
         CREATE INDEX IF NOT EXISTS idx_tags_name ON tags(name);
+        CREATE INDEX IF NOT EXISTS idx_attachments_note ON note_attachments(note_id);
     )SQL";
 
     return execute(QString::fromUtf8(schema));

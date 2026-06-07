@@ -28,6 +28,7 @@ private:
     void showLogin();
     void showMain();
     void handleAuthFailure();
+    void destroyVaultAfterFailedAttempts();
 
     std::unique_ptr<Database> m_db;
     std::unique_ptr<VaultSession> m_session;

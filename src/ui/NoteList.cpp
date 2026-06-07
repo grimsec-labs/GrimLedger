@@ -68,6 +68,11 @@ void NoteList::setNotes(const QVector<Note>& notes) {
     }
 }
 
+void NoteList::clearSelection() {
+    m_list->clearSelection();
+    m_currentId = 0;
+}
+
 void NoteList::selectNote(qint64 id) {
     for (int i = 0; i < m_list->count(); ++i) {
         auto* item = m_list->item(i);

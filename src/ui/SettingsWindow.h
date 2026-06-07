@@ -15,10 +15,13 @@ public:
     explicit SettingsWindow(QWidget* parent = nullptr);
 
     QString accentColor() const;
+    void setAccentColor(const QString& hex);
     bool lineNumbers() const;
     bool wordWrap() const;
     bool autoLockEnabled() const;
     int autoLockMinutes() const;
+    bool selfDestructEnabled() const;
+    void setSelfDestructEnabled(bool enabled);
 
 signals:
     void accentChanged(const QString& hex);
@@ -44,4 +47,5 @@ private:
     QSpinBox* m_autoLockSpin = nullptr;
     QLineEdit* m_currentPassEdit = nullptr;
     QLineEdit* m_newPassEdit = nullptr;
+    QCheckBox* m_selfDestructCheck = nullptr;
 };

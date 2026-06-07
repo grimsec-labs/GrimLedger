@@ -1,11 +1,38 @@
 #include "markdown/MarkdownRenderer.h"
 #include "markdown/SyntaxHighlighter.h"
+#include "storage/AttachmentRepository.h"
 
 #include <QRegularExpression>
 
 namespace {
 
-QString inlineFormat(const QString& line) {
+QString renderImageTag(
+    const QString& alt,
+    const QString& url,
+    const MarkdownRenderer::ImageUrlResolver& resolveImage) {
+    if (!AttachmentRepository::isGrimAttachmentUrl(url)) {
+        return MarkdownRenderer::escapeHtml(
+            QStringLiteral("![") + alt + QStringLiteral("](") + url + QStringLiteral(")"));
+    }
+
+    QString src;
+    if (resolveImage) {
+        src = resolveImage(url);
+    }
+    if (src.isEmpty()) {
+        return QStringLiteral("<span style='color:#998877;'>[image unavailable]</span>");
+    }
+
+    return QStringLiteral(R"(<img src=")")
+        + MarkdownRenderer::escapeHtml(src)
+        + QStringLiteral(R"(" alt=")")
+        + MarkdownRenderer::escapeHtml(alt)
+        + QStringLiteral(R"("/>)");
+}
+
+QString inlineFormat(
+    const QString& line,
+    const MarkdownRenderer::ImageUrlResolver& resolveImage) {
     QString output;
     int pos = 0;
     const int n = line.size();
@@ -42,6 +69,16 @@ QString inlineFormat(const QString& line) {
                 continue;
             }
         }
+        if (line[pos] == QLatin1Char('!') && line.mid(pos).startsWith(QStringLiteral("!["))) {
+            static const QRegularExpression imageRe(
+                QStringLiteral(R"(!\[([^\]]*)\]\(([^)]+)\))"));
+            const auto m = imageRe.match(line, pos);
+            if (m.hasMatch() && m.capturedStart() == pos) {
+                output += renderImageTag(m.captured(1), m.captured(2), resolveImage);
+                pos = m.capturedEnd();
+                continue;
+            }
+        }
         if (line[pos] == QLatin1Char('[')) {
             static const QRegularExpression linkRe(
                 QStringLiteral(R"(\[([^\]]+)\]\(([^)]+)\))"));
@@ -61,7 +98,8 @@ QString inlineFormat(const QString& line) {
         while (next < n
                && line[next] != QLatin1Char('*')
                && line[next] != QLatin1Char('`')
-               && line[next] != QLatin1Char('[')) {
+               && line[next] != QLatin1Char('[')
+               && line[next] != QLatin1Char('!')) {
             ++next;
         }
         output += MarkdownRenderer::escapeHtml(line.mid(pos, next - pos));
@@ -76,7 +114,10 @@ QString MarkdownRenderer::escapeHtml(const QString& text) {
     return text.toHtmlEscaped();
 }
 
-QString MarkdownRenderer::renderToHtml(const QString& markdown, const QString& accentColor) {
+QString MarkdownRenderer::renderToHtml(
+    const QString& markdown,
+    const QString& accentColor,
+    const ImageUrlResolver& resolveImage) {
     QString html;
     html += QStringLiteral(
         "<html><head><style>"
@@ -96,6 +137,7 @@ QString MarkdownRenderer::renderToHtml(const QString& markdown, const QString& a
         "th{background:#1a1a1e;color:%1;}"
         ".search-hit{background:#442200;color:#ffcc00;}"
         "hr{border:none;border-top:1px solid #331111;margin:16px 0;}"
+        "img{max-width:100%;height:auto;border:1px solid #331111;border-radius:4px;margin:8px 0;}"
         "</style></head><body>").arg(accentColor);
 
     const QStringList lines = markdown.split('\n');
@@ -145,6 +187,15 @@ QString MarkdownRenderer::renderToHtml(const QString& markdown, const QString& a
             continue;
         }
 
+        static const QRegularExpression standaloneImageRe(
+            QStringLiteral(R"(^!\[([^\]]*)\]\(([^)]+)\)\s*$)"));
+        const auto standaloneImage = standaloneImageRe.match(line);
+        if (standaloneImage.hasMatch()) {
+            closeLists();
+            html += renderImageTag(standaloneImage.captured(1), standaloneImage.captured(2), resolveImage);
+            continue;
+        }
+
         if (line.startsWith(QStringLiteral("### "))) {
             closeLists();
             html += QStringLiteral("<h3>") + escapeHtml(line.mid(4)) + QStringLiteral("</h3>");
@@ -181,7 +232,7 @@ QString MarkdownRenderer::renderToHtml(const QString& markdown, const QString& a
             html += QStringLiteral("<li><input type='checkbox' disabled ")
                 + (checked ? QStringLiteral("checked ") : QString())
                 + QStringLiteral("/> ")
-                + inlineFormat(task.captured(2))
+                + inlineFormat(task.captured(2), resolveImage)
                 + QStringLiteral("</li>");
             continue;
         }
@@ -190,7 +241,7 @@ QString MarkdownRenderer::renderToHtml(const QString& markdown, const QString& a
         const auto ul = ulRe.match(line);
         if (ul.hasMatch()) {
             if (!inUl) { closeLists(); html += QStringLiteral("<ul>"); inUl = true; }
-            html += QStringLiteral("<li>") + inlineFormat(ul.captured(1)) + QStringLiteral("</li>");
+            html += QStringLiteral("<li>") + inlineFormat(ul.captured(1), resolveImage) + QStringLiteral("</li>");
             continue;
         }
 
@@ -198,12 +249,12 @@ QString MarkdownRenderer::renderToHtml(const QString& markdown, const QString& a
         const auto ol = olRe.match(line);
         if (ol.hasMatch()) {
             if (!inOl) { closeLists(); html += QStringLiteral("<ol>"); inOl = true; }
-            html += QStringLiteral("<li>") + inlineFormat(ol.captured(1)) + QStringLiteral("</li>");
+            html += QStringLiteral("<li>") + inlineFormat(ol.captured(1), resolveImage) + QStringLiteral("</li>");
             continue;
         }
 
         closeLists();
-        html += QStringLiteral("<p>") + inlineFormat(line) + QStringLiteral("</p>");
+        html += QStringLiteral("<p>") + inlineFormat(line, resolveImage) + QStringLiteral("</p>");
     }
 
     if (inCode && !codeBuffer.isEmpty()) {

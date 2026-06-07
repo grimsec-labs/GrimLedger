@@ -1,4 +1,6 @@
 #include "ui/SettingsWindow.h"
+#include "ui/GrimFileDialog.h"
+#include "utils/AppSettings.h"
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -10,7 +12,7 @@
 #include <QPushButton>
 #include <QLabel>
 #include <QGroupBox>
-#include <QFileDialog>
+#include <QSignalBlocker>
 
 SettingsWindow::SettingsWindow(QWidget* parent)
     : QWidget(parent) {
@@ -70,6 +72,20 @@ void SettingsWindow::buildUi() {
     });
     secForm->addRow(m_autoLockCheck, m_autoLockSpin);
 
+    m_selfDestructCheck = new QCheckBox(
+        QStringLiteral("Destroy vault after 3 failed unlock attempts"), this);
+    m_selfDestructCheck->setChecked(AppSettings::selfDestructEnabled());
+    connect(m_selfDestructCheck, &QCheckBox::toggled, this, [this](bool on) {
+        AppSettings::setSelfDestructEnabled(on);
+    });
+    secForm->addRow(m_selfDestructCheck);
+
+    auto* selfDestructWarn = new QLabel(
+        QStringLiteral("⚠ All notes will be permanently lost. Back up your vault first."), this);
+    selfDestructWarn->setObjectName(QStringLiteral("WarningLabel"));
+    selfDestructWarn->setWordWrap(true);
+    secForm->addRow(selfDestructWarn);
+
     m_currentPassEdit = new QLineEdit(this);
     m_currentPassEdit->setEchoMode(QLineEdit::Password);
     m_currentPassEdit->setPlaceholderText(QStringLiteral("Current master password"));
@@ -98,7 +114,7 @@ void SettingsWindow::buildUi() {
 
     auto* backupBtn = new QPushButton(QStringLiteral("Backup Encrypted Vault"), this);
     connect(backupBtn, &QPushButton::clicked, this, [this]() {
-        const QString path = QFileDialog::getSaveFileName(
+        const QString path = GrimFileDialog::getSaveFileName(
             this, QStringLiteral("Backup Vault"),
             QStringLiteral("grimledger-backup.grimbak"),
             QStringLiteral("GrimLedger Backup (*.grimbak)"));
@@ -107,7 +123,7 @@ void SettingsWindow::buildUi() {
 
     auto* restoreBtn = new QPushButton(QStringLiteral("Restore Encrypted Backup"), this);
     connect(restoreBtn, &QPushButton::clicked, this, [this]() {
-        const QString path = QFileDialog::getOpenFileName(
+        const QString path = GrimFileDialog::getOpenFileName(
             this, QStringLiteral("Restore Backup"),
             QString(),
             QStringLiteral("GrimLedger Backup (*.grimbak)"));
@@ -125,7 +141,7 @@ void SettingsWindow::buildUi() {
 
     auto* exportEncBtn = new QPushButton(QStringLiteral("Export Encrypted Archive"), this);
     connect(exportEncBtn, &QPushButton::clicked, this, [this]() {
-        const QString path = QFileDialog::getSaveFileName(
+        const QString path = GrimFileDialog::getSaveFileName(
             this, QStringLiteral("Export Archive"),
             QStringLiteral("grimledger-archive.grimbak"),
             QStringLiteral("GrimLedger Archive (*.grimbak)"));
@@ -151,7 +167,26 @@ QString SettingsWindow::accentColor() const {
     return m_accentCombo->currentData().toString();
 }
 
+void SettingsWindow::setAccentColor(const QString& hex) {
+    QSignalBlocker blocker(m_accentCombo);
+    for (int i = 0; i < m_accentCombo->count(); ++i) {
+        if (m_accentCombo->itemData(i).toString().compare(hex, Qt::CaseInsensitive) == 0) {
+            m_accentCombo->setCurrentIndex(i);
+            return;
+        }
+    }
+}
+
 bool SettingsWindow::lineNumbers() const { return m_lineNumbersCheck->isChecked(); }
 bool SettingsWindow::wordWrap() const { return m_wordWrapCheck->isChecked(); }
 bool SettingsWindow::autoLockEnabled() const { return m_autoLockCheck->isChecked(); }
 int SettingsWindow::autoLockMinutes() const { return m_autoLockSpin->value(); }
+
+bool SettingsWindow::selfDestructEnabled() const {
+    return m_selfDestructCheck->isChecked();
+}
+
+void SettingsWindow::setSelfDestructEnabled(bool enabled) {
+    QSignalBlocker blocker(m_selfDestructCheck);
+    m_selfDestructCheck->setChecked(enabled);
+}

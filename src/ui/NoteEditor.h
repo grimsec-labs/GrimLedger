@@ -35,6 +35,7 @@ public:
     void setWordWrapEnabled(bool enabled);
 
     void setSavedState(bool saved, const QDateTime& savedAt = QDateTime());
+    void showSaveError(const QString& message);
     int wordCount() const;
     int charCount() const;
 
@@ -42,9 +43,12 @@ signals:
     void contentChanged();
     void favoriteToggled(bool favorited);
     void saveRequested();
+    void saveAndCloseRequested();
+    void imageInsertRequested();
 
 public slots:
     void insertMarkdown(const QString& before, const QString& after = QString());
+    void insertAtCursor(const QString& text);
 
 private slots:
     void onTextChanged();

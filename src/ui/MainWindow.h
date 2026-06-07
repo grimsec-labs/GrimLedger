@@ -9,6 +9,8 @@
 #include <memory>
 #include "models/Note.h"
 #include "storage/NoteRepository.h"
+#include "storage/AttachmentRepository.h"
+#include "markdown/MarkdownRenderer.h"
 #include "ui/Sidebar.h"
 
 class Sidebar;
@@ -39,6 +41,7 @@ private slots:
     void onNoteSelected(qint64 id);
     void onNewNote();
     void onSaveNote();
+    void onSaveAndClose();
     void onEditorChanged();
     void onSearchChanged(const QString& query);
     void onSortChanged(NoteSortField field, bool descending);
@@ -58,6 +61,7 @@ private slots:
     void onExportNote();
     void onExportAllMarkdown();
     void onExportEncryptedArchive(const QString& path);
+    void onInsertImage();
 
 signals:
     void vaultLocked();
@@ -67,9 +71,13 @@ private:
     void loadNotes();
     void loadNote(qint64 id);
     void selectInitialNote();
+    bool saveCurrentNote(bool showFolderPicker, bool closeAfter, bool showErrorDialog = true);
+    void closeNoteEditor();
+    void openNoteEditor();
     void applyAccent(const QString& hex);
     void updateStatusBar();
     void updatePreview();
+    MarkdownRenderer::ImageUrlResolver imageResolver() const;
 
 protected:
     bool eventFilter(QObject* obj, QEvent* event) override;
@@ -77,6 +85,7 @@ protected:
 
     Database& m_db;
     VaultSession& m_session;
+    AttachmentRepository m_attachments;
     std::unique_ptr<NoteRepository> m_notes;
     std::unique_ptr<VaultRepository> m_vault;
 
@@ -97,13 +106,16 @@ protected:
     QLabel* m_savedLabel = nullptr;
     QLabel* m_encryptLabel = nullptr;
     QLabel* m_autolockLabel = nullptr;
+    QLabel* m_emptyEditorLabel = nullptr;
 
     QVector<Note> m_cachedNotes;
     qint64 m_currentNoteId = 0;
+    qint64 m_currentFolderId = 0;
     SidebarSection m_section = SidebarSection::AllNotes;
     qint64 m_filterId = 0;
     NoteSortField m_sortField = NoteSortField::Modified;
     bool m_sortDescending = true;
     QString m_searchQuery;
-    QString m_accent = QStringLiteral("#cc2200");
+    QString m_accent;
+    bool m_lockingVault = false;
 };
