@@ -73,6 +73,12 @@ void NoteList::clearSelection() {
     m_currentId = 0;
 }
 
+void NoteList::clearSearch() {
+    if (m_searchEdit) {
+        m_searchEdit->clear();
+    }
+}
+
 void NoteList::selectNote(qint64 id) {
     for (int i = 0; i < m_list->count(); ++i) {
         auto* item = m_list->item(i);

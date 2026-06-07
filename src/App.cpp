@@ -86,6 +86,8 @@ void App::onUnlockRequested(const QString& password) {
 }
 
 void App::onCreateVaultRequested(const QString& password) {
+    const QString vaultPath = m_db->path();
+
     if (m_vault->vaultExists()) {
         if (!DialogUtils::question(
                 m_login,
@@ -94,23 +96,55 @@ void App::onCreateVaultRequested(const QString& password) {
             return;
         }
 
-        m_db->close();
-        const QString vaultPath = m_db->path();
-        if (QFile::exists(vaultPath) && !QFile::remove(vaultPath)) {
-            m_login->showError(QStringLiteral("Could not remove the existing vault file."));
-            if (!m_db->open(vaultPath)) {
-                m_login->showError(QStringLiteral("Could not reopen vault file."));
-            }
+        const QString stagedPath = vaultPath + QStringLiteral(".new");
+        if (QFile::exists(stagedPath) && !QFile::remove(stagedPath)) {
+            m_login->showError(QStringLiteral("Could not prepare staged vault file."));
             return;
         }
+
+        Database stagedDb;
+        if (!stagedDb.open(stagedPath)) {
+            m_login->showError(QStringLiteral("Could not create staged vault file."));
+            return;
+        }
+
+        VaultRepository stagedVault(stagedDb);
+        if (!stagedVault.createVault(password)) {
+            QFile::remove(stagedPath);
+            m_login->showError(QStringLiteral("Could not create vault. Try a different password."));
+            return;
+        }
+
+        QByteArray stagedKey;
+        if (!stagedVault.unlockVault(password, stagedKey)) {
+            QFile::remove(stagedPath);
+            m_login->showError(QStringLiteral("Vault created but unlock failed."));
+            return;
+        }
+        CryptoManager::secureZero(stagedKey);
+        stagedDb.close();
+
+        QString installError;
+        const RestoreResult installed = VaultRepository::installStagedVault(
+            stagedPath,
+            vaultPath,
+            &installError);
+        if (installed == RestoreResult::Failed) {
+            QFile::remove(stagedPath);
+            m_login->showError(
+                installError.isEmpty()
+                    ? QStringLiteral("Could not replace the existing vault.")
+                    : installError);
+            return;
+        }
+
+        m_db->close();
         if (!m_db->open(vaultPath)) {
-            m_login->showError(QStringLiteral("Could not reset vault file."));
+            m_login->showError(QStringLiteral("Vault replaced but could not reopen database."));
             return;
         }
         m_vault = std::make_unique<VaultRepository>(*m_db);
-    }
-
-    if (!m_vault->createVault(password)) {
+    } else if (!m_vault->createVault(password)) {
         m_login->showError(QStringLiteral("Could not create vault. Try a different password."));
         return;
     }

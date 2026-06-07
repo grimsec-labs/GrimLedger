@@ -56,12 +56,17 @@ public:
 
     static bool validateVaultFile(const QString& path, QString* errorOut = nullptr);
 
+    static RestoreResult installStagedVault(
+        const QString& stagedPath,
+        const QString& liveVaultPath,
+        QString* errorOut = nullptr);
+
 private:
     static RestoreResult installValidatedPlaintextVault(
         const QString& tempPath,
         const QString& liveVaultPath,
         QString* errorOut);
-    bool storeVaultInfo(const VaultInfo& info);
+    bool storeVaultInfo(const VaultInfo& info, bool requireChanges = false);
     bool writeVerificationToken(const QByteArray& key);
     bool verificationTokenExists() const;
     bool cryptoFormatIsV2() const;

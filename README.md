@@ -14,7 +14,8 @@ No cloud accounts. No online sync. Your vault stays on your machine.
 - Syntax highlighting for 25+ languages in editor and preview
 - Full-text search across titles, tags, and note bodies
 - Folders, tags, favorites, and recent notes
-- Import/export Markdown files
+- Encrypted credential vault with browser bridge (opt-in, disabled by default)
+- Import/export Markdown files with honest bulk-export reporting
 - Encrypted backup and archive export
 - Auto-lock after inactivity + manual lock
 - Change master password
@@ -75,7 +76,7 @@ GrimLedger uses **libsodium** for all cryptographic operations. No custom crypto
 |------------|---------|
 | **C++20** compiler | MSVC 2019+, GCC 10+, or Clang 12+ |
 | **CMake** 3.21+ | Build system |
-| **Qt 6** (Core, Gui, Widgets) | GUI framework |
+| **Qt 6** (Core, Gui, Widgets, Network) | GUI framework + bridge IPC |
 | **libsodium** 1.0.20+ | Argon2id + XChaCha20-Poly1305 (fetched by CMake) |
 | **SQLite** amalgamation | Local database (fetched by CMake) |
 
@@ -107,6 +108,12 @@ cmake -B build
 cmake --build build
 
 ./build/GrimLedger
+```
+
+### Run tests
+
+```bash
+ctest --test-dir build -C Release --output-on-failure
 ```
 
 ### macOS
@@ -156,7 +163,7 @@ After 15 minutes of inactivity (configurable in Settings), the vault auto-locks.
 | **Backup Encrypted Vault** | GRIMBKUP2 standalone envelope (password-verified) → `.grimbak` file |
 | **Restore Encrypted Backup** | Staged restore; unlock afterward with the backup password |
 | **Export Selected Note** | Plaintext `.md` file |
-| **Export All Notes** | Plaintext `.md` files in a folder |
+| **Export All Notes** | Plaintext `.md` files in a folder (reports partial failures) |
 | **Export Encrypted Archive** | Same as encrypted backup |
 
 ⚠ Exported Markdown files are **not encrypted**.
@@ -173,7 +180,10 @@ GrimLedger/
     main.cpp, App.cpp
     ui/          — Qt widgets (login, main window, editor, preview, settings)
     security/    — CryptoManager, PasswordManager, VaultSession
-    storage/     — Database, NoteRepository, VaultRepository
+    storage/     — Database, NoteRepository, CredentialRepository, VaultRepository
+    bridge/      — CredentialBridgeServer, BridgeFillCoordinator, BridgeAuth
+    browser-extension/ — Chrome/Edge fill helper (native messaging)
+    tests/       — Security regression tests (run via `ctest`)
     models/      — Note, Folder, Tag
     search/      — SearchEngine
     markdown/    — MarkdownRenderer, SyntaxHighlighter

@@ -172,6 +172,26 @@ void NoteEditor::setSavedState(bool saved, const QDateTime& savedAt) {
     updateSaveIndicator();
 }
 
+bool NoteEditor::integrityError() const {
+    return m_integrityError;
+}
+
+void NoteEditor::setIntegrityError(bool errored) {
+    m_integrityError = errored;
+    const bool enabled = !errored;
+    m_titleEdit->setEnabled(enabled);
+    m_tagsEdit->setEnabled(enabled);
+    m_editor->setEnabled(enabled);
+    m_favButton->setEnabled(enabled);
+    m_saveButton->setEnabled(enabled);
+    if (errored) {
+        m_saveLabel->setText(QStringLiteral("Integrity error — this note cannot be edited."));
+        m_saveLabel->setStyleSheet(QStringLiteral("color: #ff4444;"));
+    } else {
+        updateSaveIndicator();
+    }
+}
+
 int NoteEditor::wordCount() const {
     const QString t = m_editor->toPlainText();
     if (t.trimmed().isEmpty()) return 0;

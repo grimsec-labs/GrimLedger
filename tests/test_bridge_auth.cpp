@@ -1,6 +1,11 @@
 #include "bridge/BridgeAuth.h"
 
+#include <sodium.h>
+
 int main() {
+    if (sodium_init() < 0) {
+        return 1;
+    }
     const QByteArray token = BridgeAuth::generateToken();
     if (token.size() != 32) {
         return 1;

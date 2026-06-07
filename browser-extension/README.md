@@ -24,7 +24,10 @@ Connects Chrome/Edge to the unlocked GrimLedger desktop app via native messaging
 - GrimLedger must be **unlocked**; the bridge stops when you lock the vault.
 - Fill requests require **exact origin match** (HTTPS credentials never fill on HTTP).
 - GrimLedger shows a **confirmation dialog** before sending a password to the browser.
-- The native host adds a per-session token; only the running GrimLedger instance can answer bridge requests.
+- The native host adds a per-session **hex-encoded token** and random local endpoint name; only the running GrimLedger instance can answer bridge requests.
+- Fill responses include a **nonce** echoed from the request; the background service worker rejects mismatches.
+- **Scheme matching is strict**: HTTPS credentials never fill on HTTP pages, even with subdomain allowance enabled.
+- Residual threat: another process running as the same OS user may connect to the local socket if the bridge is enabled. Keep the bridge off unless needed.
 
 ## Troubleshooting
 

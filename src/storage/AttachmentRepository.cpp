@@ -1,5 +1,7 @@
 #include "storage/AttachmentRepository.h"
 #include "security/CryptoManager.h"
+#include "storage/DbTransaction.h"
+#include "utils/SecurityLimits.h"
 #include "utils/TimeUtils.h"
 
 #include <QDateTime>
@@ -12,6 +14,24 @@
 
 AttachmentRepository::AttachmentRepository(Database& db)
     : m_db(db) {}
+
+namespace {
+
+qint64 totalAttachmentPlaintextBytes(sqlite3* db) {
+    sqlite3_stmt* stmt = nullptr;
+    const char* sql = "SELECT COALESCE(SUM(length(encrypted_data)), 0) FROM note_attachments;";
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        return 0;
+    }
+    qint64 total = 0;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        total = sqlite3_column_int64(stmt, 0);
+    }
+    sqlite3_finalize(stmt);
+    return total;
+}
+
+} // namespace
 
 bool AttachmentRepository::isGrimAttachmentUrl(const QString& url) {
     return url.startsWith(QString::fromUtf8(kGrimScheme));
@@ -31,6 +51,11 @@ QString AttachmentRepository::storeAttachment(
     const QString& originalName,
     const QByteArray& key) {
     if (noteId <= 0 || imageData.isEmpty() || key.isEmpty()) {
+        return QString();
+    }
+
+    const qint64 currentBytes = totalAttachmentPlaintextBytes(m_db.handle());
+    if (currentBytes + imageData.size() > SecurityLimits::kMaxVaultAttachmentBytes) {
         return QString();
     }
 
@@ -152,6 +177,11 @@ QHash<QString, QString> AttachmentRepository::duplicateAttachments(
         "INSERT INTO note_attachments (id, note_id, encrypted_data, mime_type, original_name, created_at) "
         "VALUES (?, ?, ?, ?, ?, ?);";
 
+    DbTransaction tx(m_db);
+    if (!tx.isActive()) {
+        return idMap;
+    }
+
     for (const Row& row : rows) {
         const QString newId = QUuid::createUuid().toString(QUuid::WithoutBraces);
 
@@ -184,11 +214,15 @@ QHash<QString, QString> AttachmentRepository::duplicateAttachments(
         sqlite3_bind_int64(ins, 6, row.createdAt);
         const bool ok = sqlite3_step(ins) == SQLITE_DONE;
         sqlite3_finalize(ins);
-        if (ok) {
-            idMap.insert(row.id, newId);
+        if (!ok) {
+            return QHash<QString, QString>();
         }
+        idMap.insert(row.id, newId);
     }
 
+    if (!tx.commit()) {
+        return QHash<QString, QString>();
+    }
     return idMap;
 }
 

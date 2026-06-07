@@ -7,6 +7,8 @@
 #include <QLabel>
 #include <QStatusBar>
 #include <QStackedWidget>
+#include <QHash>
+#include <QTimer>
 #include <memory>
 #include "models/Note.h"
 #include "models/Credential.h"
@@ -104,7 +106,7 @@ private:
     void updatePreview();
     MarkdownRenderer::ImageUrlResolver imageResolver() const;
     void startBridge();
-    void clearSensitiveUiState();
+    void clearAllSensitiveState();
     void finalizeVaultRestore(bool cleanupWarning, const QString& warningDetail = QString());
 
 protected:
@@ -159,4 +161,6 @@ protected:
     QString m_credSearchQuery;
     QString m_accent;
     bool m_lockingVault = false;
+    QTimer* m_previewTimer = nullptr;
+    mutable QHash<QString, QString> m_attachmentPreviewCache;
 };

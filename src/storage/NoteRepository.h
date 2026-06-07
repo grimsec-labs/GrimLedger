@@ -4,6 +4,7 @@
 #include "models/Note.h"
 #include "models/Tag.h"
 #include "storage/Database.h"
+#include "utils/RepositoryResult.h"
 
 #include <QByteArray>
 #include <QVector>
@@ -36,6 +37,10 @@ public:
     bool updateNote(const Note& note, const QByteArray& key);
     bool deleteNote(qint64 id);
     qint64 duplicateNote(qint64 id, const QByteArray& key);
+    qint64 duplicateNoteWithAttachments(
+        qint64 id,
+        const QByteArray& key,
+        class AttachmentRepository& attachments);
 
     QVector<Folder> listFolders() const;
     qint64 createFolder(const QString& name, qint64 parentId = 0);
@@ -48,7 +53,7 @@ public:
 
     bool importMarkdownFile(const QString& path, const QByteArray& key, qint64 folderId = 0);
     bool exportMarkdownFile(qint64 noteId, const QString& path, const QByteArray& key) const;
-    bool exportAllMarkdown(const QString& dirPath, const QByteArray& key) const;
+    ExportResult exportAllMarkdown(const QString& dirPath, const QByteArray& key) const;
 
     qint64 ensureDefaultFolder();
     qint64 defaultFolderId() const;
@@ -66,7 +71,7 @@ private:
         qint64 noteId,
         bool isBody,
         const QByteArray& key) const;
-    QString decryptNoteField(
+    DecryptResult<QString> decryptNoteField(
         const QByteArray& blob,
         qint64 noteId,
         bool isBody,

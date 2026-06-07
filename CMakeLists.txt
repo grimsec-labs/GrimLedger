@@ -196,6 +196,19 @@ endif()
 
 enable_testing()
 
+set(GRIMLEDGER_STORAGE_TEST_SOURCES
+    src/storage/Database.cpp
+    src/storage/DbTransaction.cpp
+    src/storage/CredentialRepository.cpp
+    src/storage/NoteRepository.cpp
+    src/storage/AttachmentRepository.cpp
+    src/storage/VaultRepository.cpp
+    src/security/CryptoManager.cpp
+    src/security/PasswordManager.cpp
+    src/utils/SqliteUtils.cpp
+    src/utils/TimeUtils.cpp
+)
+
 function(add_grimledger_test name)
     add_executable(${name} tests/${name}.cpp)
     set_target_properties(${name} PROPERTIES AUTOMOC OFF AUTOUIC OFF AUTORCC OFF)
@@ -209,6 +222,18 @@ function(add_grimledger_test name)
     elseif(${name} STREQUAL "test_bridge_auth")
         target_sources(${name} PRIVATE src/bridge/BridgeAuth.cpp)
         target_link_libraries(${name} PRIVATE Qt6::Core sodium)
+    elseif(${name} STREQUAL "test_bridge_server")
+        target_sources(${name} PRIVATE src/bridge/BridgeAuth.cpp)
+        target_link_libraries(${name} PRIVATE Qt6::Core sodium)
+    elseif(${name} STREQUAL "test_credential_repository")
+        target_sources(${name} PRIVATE ${GRIMLEDGER_STORAGE_TEST_SOURCES})
+        target_link_libraries(${name} PRIVATE Qt6::Core sqlite3_static sodium)
+    elseif(${name} STREQUAL "test_note_repository")
+        target_sources(${name} PRIVATE ${GRIMLEDGER_STORAGE_TEST_SOURCES})
+        target_link_libraries(${name} PRIVATE Qt6::Core sqlite3_static sodium)
+    elseif(${name} STREQUAL "test_vault_restore")
+        target_sources(${name} PRIVATE ${GRIMLEDGER_STORAGE_TEST_SOURCES})
+        target_link_libraries(${name} PRIVATE Qt6::Core sqlite3_static sodium)
     endif()
     add_test(NAME ${name} COMMAND ${name})
 endfunction()
@@ -216,6 +241,10 @@ endfunction()
 add_grimledger_test(test_origin_matcher)
 add_grimledger_test(test_sqlite_utils)
 add_grimledger_test(test_bridge_auth)
+add_grimledger_test(test_bridge_server)
+add_grimledger_test(test_credential_repository)
+add_grimledger_test(test_note_repository)
+add_grimledger_test(test_vault_restore)
 
 if(WIN32)
     set_target_properties(GrimLedger PROPERTIES WIN32_EXECUTABLE TRUE)

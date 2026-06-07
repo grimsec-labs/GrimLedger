@@ -25,7 +25,7 @@ bool Database::open(const QString& path) {
         return false;
     }
 
-    auto pragmaOn = [this](const char* name) -> bool {
+    auto readPragmaInt = [this](const char* name, int* valueOut) -> bool {
         sqlite3_stmt* stmt = nullptr;
         const QByteArray sql = QByteArray("PRAGMA ") + name + ';';
         if (sqlite3_prepare_v2(m_db, sql.constData(), -1, &stmt, nullptr) != SQLITE_OK) {
@@ -33,21 +33,26 @@ bool Database::open(const QString& path) {
         }
         bool ok = false;
         if (sqlite3_step(stmt) == SQLITE_ROW) {
-            ok = sqlite3_column_int(stmt, 0) != 0;
+            *valueOut = sqlite3_column_int(stmt, 0);
+            ok = true;
         }
         sqlite3_finalize(stmt);
         return ok;
     };
 
-    if (!execute(QStringLiteral("PRAGMA foreign_keys = ON;")) || !pragmaOn("foreign_keys")) {
+    int pragmaValue = 0;
+    if (!execute(QStringLiteral("PRAGMA foreign_keys = ON;"))
+        || !readPragmaInt("foreign_keys", &pragmaValue) || pragmaValue == 0) {
         close();
         return false;
     }
-    if (!execute(QStringLiteral("PRAGMA secure_delete = ON;")) || !pragmaOn("secure_delete")) {
+    if (!execute(QStringLiteral("PRAGMA secure_delete = ON;"))
+        || !readPragmaInt("secure_delete", &pragmaValue) || pragmaValue == 0) {
         close();
         return false;
     }
-    if (!execute(QStringLiteral("PRAGMA trusted_schema = OFF;")) || !pragmaOn("trusted_schema")) {
+    if (!execute(QStringLiteral("PRAGMA trusted_schema = OFF;"))
+        || !readPragmaInt("trusted_schema", &pragmaValue) || pragmaValue != 0) {
         close();
         return false;
     }

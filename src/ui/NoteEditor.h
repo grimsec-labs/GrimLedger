@@ -35,6 +35,8 @@ public:
     void setWordWrapEnabled(bool enabled);
 
     void setSavedState(bool saved, const QDateTime& savedAt = QDateTime());
+    void setIntegrityError(bool errored);
+    bool integrityError() const;
     void showSaveError(const QString& message);
     int wordCount() const;
     int charCount() const;
@@ -72,4 +74,5 @@ private:
     bool m_saved = true;
     QDateTime m_lastSaved;
     bool m_isFavorite = false;
+    bool m_integrityError = false;
 };

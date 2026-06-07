@@ -75,10 +75,10 @@ MainWindow::MainWindow(Database& db, VaultSession& session, QWidget* parent)
     m_session.setAutoLockEnabled(AppSettings::autoLockEnabled());
     m_session.setAutoLockMinutes(AppSettings::autoLockMinutes());
 
-    QTimer* previewTimer = new QTimer(this);
-    previewTimer->setInterval(400);
-    connect(previewTimer, &QTimer::timeout, this, &MainWindow::updatePreview);
-    previewTimer->start();
+    m_previewTimer = new QTimer(this);
+    m_previewTimer->setInterval(400);
+    connect(m_previewTimer, &QTimer::timeout, this, &MainWindow::updatePreview);
+    m_previewTimer->start();
 }
 
 MainWindow::~MainWindow() {
@@ -135,24 +135,12 @@ void MainWindow::buildUi() {
         }
     });
     connect(m_noteList, &NoteList::duplicateNoteRequested, this, [this](qint64 id) {
-        const auto source = m_notes->getNote(id, m_session.key());
-        if (!source) {
-            return;
-        }
-
-        Note copy = *source;
-        copy.id = 0;
-        copy.title += QStringLiteral(" (copy)");
-        const qint64 newId = m_notes->createNote(copy, m_session.key());
+        const qint64 newId = m_notes->duplicateNoteWithAttachments(
+            id,
+            m_session.key(),
+            m_attachments);
         if (newId <= 0) {
             return;
-        }
-
-        const auto idMap = m_attachments.duplicateAttachments(id, newId, m_session.key());
-        if (!idMap.isEmpty()) {
-            Note updated = *m_notes->getNote(newId, m_session.key());
-            updated.body = m_attachments.remapAttachmentUrls(updated.body, idMap);
-            m_notes->updateNote(updated, m_session.key());
         }
 
         loadNotes();
@@ -433,6 +421,7 @@ void MainWindow::loadNote(qint64 id) {
         ? note->folderId
         : m_notes->defaultFolderId();
     openNoteEditor();
+    m_editor->setIntegrityError(note->integrityError);
     m_editor->setTitle(note->title);
     m_editor->setBody(note->body);
     m_editor->setTags(note->tags.join(QStringLiteral(", ")));
@@ -704,6 +693,9 @@ void MainWindow::onSaveAndClose() {
 }
 
 bool MainWindow::saveCurrentNote(bool showFolderPicker, bool closeAfter, bool showErrorDialog) {
+    if (m_editor && m_editor->integrityError()) {
+        return true;
+    }
     if (m_currentNoteId <= 0) {
         if (showFolderPicker) {
             DialogUtils::information(
@@ -799,6 +791,7 @@ bool MainWindow::saveCurrentNote(bool showFolderPicker, bool closeAfter, bool sh
 void MainWindow::closeNoteEditor() {
     m_currentNoteId = 0;
     m_currentFolderId = 0;
+    m_editor->setIntegrityError(false);
     m_editor->setTitle(QString());
     m_editor->setBody(QString());
     m_editor->setTags(QString());
@@ -850,7 +843,7 @@ void MainWindow::onLockVault() {
         }
     }
     stopBridge();
-    clearSensitiveUiState();
+    clearAllSensitiveState();
     m_session.lock();
     m_lockingVault = false;
     emit vaultLocked();
@@ -1035,7 +1028,7 @@ void MainWindow::onRestoreVault(const QString& path) {
         restoreResult = VaultRepository::restoreFromBackup(path, password, m_db.path(), &error);
         if (!m_db.open(m_db.path())) {
             stopBridge();
-            clearSensitiveUiState();
+            clearAllSensitiveState();
             m_session.lock();
             DialogUtils::critical(this, QStringLiteral("Restore"),
                 QStringLiteral("Restored vault could not be reopened. Vault is locked."));
@@ -1056,7 +1049,7 @@ void MainWindow::onRestoreVault(const QString& path) {
             path, m_session.key(), m_db.path(), &error);
         if (!m_db.open(m_db.path())) {
             stopBridge();
-            clearSensitiveUiState();
+            clearAllSensitiveState();
             m_session.lock();
             DialogUtils::critical(this, QStringLiteral("Restore"),
                 QStringLiteral("Restored vault could not be reopened. Vault is locked."));
@@ -1086,7 +1079,7 @@ void MainWindow::onRestoreVault(const QString& path) {
 void MainWindow::finalizeVaultRestore(bool cleanupWarning, const QString& warningDetail) {
     stopBridge();
     closeNoteEditor();
-    clearSensitiveUiState();
+    clearAllSensitiveState();
     m_cachedNotes.clear();
     m_preview->setMarkdown(QString(), imageResolver());
     m_session.lock();
@@ -1159,11 +1152,29 @@ void MainWindow::onExportNote() {
 void MainWindow::onExportAllMarkdown() {
     const QString dir = GrimFileDialog::getExistingDirectory(
         this, QStringLiteral("Export All Notes"));
-    if (!dir.isEmpty()) {
-        m_notes->exportAllMarkdown(dir, m_session.key());
-        DialogUtils::information(this, QStringLiteral("Export"),
-            QStringLiteral("Notes exported as Markdown."));
+    if (dir.isEmpty()) {
+        return;
     }
+
+    const ExportResult result = m_notes->exportAllMarkdown(dir, m_session.key());
+    if (result.allOk()) {
+        DialogUtils::information(
+            this,
+            QStringLiteral("Export"),
+            QStringLiteral("Exported %1 note(s) as Markdown.").arg(result.ok));
+        return;
+    }
+
+    DialogUtils::warning(
+        this,
+        QStringLiteral("Export"),
+        QStringLiteral(
+            "Exported %1 note(s). Failed: %2. Skipped integrity errors: %3. "
+            "Filename collisions resolved: %4.")
+            .arg(result.ok)
+            .arg(result.failed)
+            .arg(result.skippedIntegrity)
+            .arg(result.collisions));
 }
 
 void MainWindow::onExportEncryptedArchive(const QString& path) {
@@ -1178,11 +1189,17 @@ MarkdownRenderer::ImageUrlResolver MainWindow::imageResolver() const {
             return QString();
         }
         const QString attachmentId = AttachmentRepository::attachmentIdFromUrl(url);
+        const QString cacheKey = QStringLiteral("%1:%2").arg(noteId).arg(attachmentId);
+        if (m_attachmentPreviewCache.contains(cacheKey)) {
+            return m_attachmentPreviewCache.value(cacheKey);
+        }
         const auto data = m_attachments.loadAttachment(attachmentId, noteId, key);
         if (!data) {
             return QString();
         }
-        return QStringLiteral("data:image/png;base64,") + data->toBase64();
+        const QString resolved = QStringLiteral("data:image/png;base64,") + data->toBase64();
+        m_attachmentPreviewCache.insert(cacheKey, resolved);
+        return resolved;
     };
 }
 
@@ -1244,12 +1261,30 @@ void MainWindow::updateStatusBar() {
 }
 
 void MainWindow::onVaultUnlocked() {
+    m_credentials->migrateFillPolicies(m_session.key());
+    if (m_previewTimer) {
+        m_previewTimer->start();
+    }
     loadNotes();
     refreshSidebar();
     startBridge();
 }
 
-void MainWindow::clearSensitiveUiState() {
+void MainWindow::clearAllSensitiveState() {
+    closeNoteEditor();
+    m_cachedNotes.clear();
+    m_searchQuery.clear();
+    m_attachmentPreviewCache.clear();
+    if (m_preview) {
+        m_preview->setMarkdown(QString());
+    }
+    if (m_previewTimer) {
+        m_previewTimer->stop();
+    }
+    if (m_noteList) {
+        m_noteList->clearSearch();
+    }
+
     m_currentCredentialId = 0;
     m_credSearchQuery.clear();
     m_cachedCredentials.clear();

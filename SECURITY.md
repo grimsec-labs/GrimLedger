@@ -15,6 +15,7 @@ No custom ciphers, no homegrown KDF, no ECB, no unauthenticated encryption.
 - Note titles, bodies, and image attachments are encrypted before SQLite storage.
 - Each ciphertext includes a unique nonce (prepended).
 - Domain-bound AEAD prevents undetected ciphertext swapping between notes, fields, or purposes.
+- Credential `allow_subdomains` fill policy is stored in authenticated `encrypted_fill_policy` blobs (AEAD with per-credential AAD).
 - The SQLite file may contain encrypted BLOBs and unencrypted structural metadata (timestamps, folder names, tag names, favorite flags).
 - `PRAGMA secure_delete = ON` is enabled to reduce recovery of deleted ciphertext from free pages (not guaranteed physical erasure).
 
@@ -35,6 +36,7 @@ No custom ciphers, no homegrown KDF, no ECB, no unauthenticated encryption.
 - **GRIMBKUP2** backups can restore on a clean machine using only the backup file and the master password used when creating the backup.
 - **GRIMBKUP1** legacy backups require the same unlocked vault session key; restore validates before replacing the live vault.
 - Restore never deletes the live vault until the replacement passes integrity and cryptographic checks.
+- If restore succeeds but the `.bak` cleanup fails, GrimLedger still locks the session and forces re-login (`InstalledWithCleanupWarning`).
 
 ## Optional Self-Destruct
 

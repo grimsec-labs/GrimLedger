@@ -1,10 +1,15 @@
 #include "storage/NoteRepository.h"
+#include "storage/AttachmentRepository.h"
+#include "storage/DbTransaction.h"
 #include "security/CryptoManager.h"
 #include "utils/SecurityLimits.h"
+#include "utils/SqliteUtils.h"
 #include "utils/TimeUtils.h"
 
 #include <QFile>
 #include <QFileInfo>
+#include <QSaveFile>
+#include <QSet>
 #include <sqlite3.h>
 
 #include <algorithm>
@@ -25,19 +30,36 @@ QByteArray NoteRepository::encryptNoteField(
     return enc.value_or(QByteArray());
 }
 
-QString NoteRepository::decryptNoteField(
+DecryptResult<QString> NoteRepository::decryptNoteField(
     const QByteArray& blob,
     qint64 noteId,
     bool isBody,
     const QByteArray& key) const {
+    DecryptResult<QString> result;
+    if (blob.isEmpty()) {
+        result.status = DecryptStatus::Empty;
+        return result;
+    }
+
     const QByteArray aad = isBody
         ? CryptoManager::noteBodyAssociatedData(noteId)
         : CryptoManager::noteTitleAssociatedData(noteId);
     const auto dec = CryptoManager::decryptField(blob, key, aad);
-    if (!dec) {
-        return QString();
+    if (dec) {
+        result.status = dec->isEmpty() ? DecryptStatus::Empty : DecryptStatus::Ok;
+        result.value = QString::fromUtf8(*dec);
+        return result;
     }
-    return QString::fromUtf8(*dec);
+
+    const auto legacy = CryptoManager::decryptLegacy(blob, key);
+    if (legacy) {
+        result.status = legacy->isEmpty() ? DecryptStatus::Empty : DecryptStatus::Ok;
+        result.value = QString::fromUtf8(*legacy);
+        return result;
+    }
+
+    result.status = DecryptStatus::IntegrityError;
+    return result;
 }
 
 QVector<QString> NoteRepository::getTagsForNote(qint64 noteId) const {
@@ -105,8 +127,14 @@ QVector<Note> NoteRepository::listNotes(
         Note n;
         n.id = sqlite3_column_int64(stmt, 0);
         const auto* tPtr = reinterpret_cast<const char*>(sqlite3_column_blob(stmt, 1));
-        n.title = decryptNoteField(
+        const DecryptResult<QString> titleDec = decryptNoteField(
             QByteArray(tPtr, sqlite3_column_bytes(stmt, 1)), n.id, false, key);
+        if (titleDec.status == DecryptStatus::IntegrityError) {
+            n.integrityError = true;
+            n.title = QStringLiteral("(integrity error)");
+        } else {
+            n.title = titleDec.value;
+        }
         // Body not loaded in list view for performance — only title needed.
         n.folderId = sqlite3_column_int64(stmt, 3);
         n.createdAt = TimeUtils::fromUnix(sqlite3_column_int64(stmt, 4));
@@ -147,11 +175,20 @@ std::optional<Note> NoteRepository::getNote(qint64 id, const QByteArray& key) co
         Note n;
         n.id = id;
         const auto* tPtr = reinterpret_cast<const char*>(sqlite3_column_blob(stmt, 0));
-        n.title = decryptNoteField(
+        const DecryptResult<QString> titleDec = decryptNoteField(
             QByteArray(tPtr, sqlite3_column_bytes(stmt, 0)), n.id, false, key);
         const auto* bPtr = reinterpret_cast<const char*>(sqlite3_column_blob(stmt, 1));
-        n.body = decryptNoteField(
+        const DecryptResult<QString> bodyDec = decryptNoteField(
             QByteArray(bPtr, sqlite3_column_bytes(stmt, 1)), n.id, true, key);
+        if (titleDec.status == DecryptStatus::IntegrityError
+            || bodyDec.status == DecryptStatus::IntegrityError) {
+            n.integrityError = true;
+            n.title = QStringLiteral("(integrity error)");
+            n.body.clear();
+        } else {
+            n.title = titleDec.value;
+            n.body = bodyDec.value;
+        }
         n.folderId = sqlite3_column_type(stmt, 2) == SQLITE_NULL
             ? 0
             : sqlite3_column_int64(stmt, 2);
@@ -169,6 +206,11 @@ std::optional<Note> NoteRepository::getNote(qint64 id, const QByteArray& key) co
 }
 
 qint64 NoteRepository::createNote(const Note& note, const QByteArray& key) {
+    DbTransaction tx(m_db);
+    if (!tx.isActive()) {
+        return 0;
+    }
+
     const qint64 now = TimeUtils::toUnix(QDateTime::currentDateTimeUtc());
     static const QByteArray kPlaceholder(1, '\0');
 
@@ -188,21 +230,30 @@ qint64 NoteRepository::createNote(const Note& note, const QByteArray& key) {
     sqlite3_bind_int64(stmt, 5, now);
     sqlite3_bind_int(stmt, 6, note.isFavorite ? 1 : 0);
 
-    if (sqlite3_step(stmt) != SQLITE_DONE) {
+    if (!SqliteUtils::stepDone(stmt)) {
         sqlite3_finalize(stmt);
         return 0;
     }
     sqlite3_finalize(stmt);
 
     const qint64 id = sqlite3_last_insert_rowid(m_db.handle());
-    Note persisted = note;
-    persisted.id = id;
-    if (!updateNote(persisted, key)) {
-        deleteNote(id);
+    if (id <= 0) {
         return 0;
     }
 
-    setNoteTags(id, note.tags);
+    Note persisted = note;
+    persisted.id = id;
+    if (!updateNote(persisted, key)) {
+        return 0;
+    }
+
+    if (!setNoteTags(id, note.tags)) {
+        return 0;
+    }
+
+    if (!tx.commit()) {
+        return 0;
+    }
     return id;
 }
 
@@ -231,13 +282,20 @@ bool NoteRepository::updateNote(const Note& note, const QByteArray& key) {
     sqlite3_bind_int(stmt, 5, note.isFavorite ? 1 : 0);
     sqlite3_bind_int64(stmt, 6, note.id);
 
-    const bool ok = sqlite3_step(stmt) == SQLITE_DONE;
+    if (!SqliteUtils::stepDone(stmt)) {
+        sqlite3_finalize(stmt);
+        return false;
+    }
     sqlite3_finalize(stmt);
 
-    if (ok) {
-        setNoteTags(note.id, note.tags);
+    if (!SqliteUtils::expectChanges(m_db.handle(), 1)) {
+        return false;
     }
-    return ok;
+
+    if (!setNoteTags(note.id, note.tags)) {
+        return false;
+    }
+    return true;
 }
 
 bool NoteRepository::deleteNote(qint64 id) {
@@ -247,19 +305,88 @@ bool NoteRepository::deleteNote(qint64 id) {
         return false;
     }
     sqlite3_bind_int64(stmt, 1, id);
-    const bool ok = sqlite3_step(stmt) == SQLITE_DONE;
+    if (!SqliteUtils::stepDone(stmt)) {
+        sqlite3_finalize(stmt);
+        return false;
+    }
     sqlite3_finalize(stmt);
-    return ok;
+    return SqliteUtils::expectChanges(m_db.handle(), 1);
 }
 
 qint64 NoteRepository::duplicateNote(qint64 id, const QByteArray& key) {
     const auto note = getNote(id, key);
-    if (!note) return 0;
+    if (!note || note->integrityError) {
+        return 0;
+    }
 
     Note copy = *note;
     copy.id = 0;
     copy.title += QStringLiteral(" (copy)");
     return createNote(copy, key);
+}
+
+qint64 NoteRepository::duplicateNoteWithAttachments(
+    qint64 id,
+    const QByteArray& key,
+    AttachmentRepository& attachments) {
+    const auto note = getNote(id, key);
+    if (!note || note->integrityError) {
+        return 0;
+    }
+
+    DbTransaction tx(m_db);
+    if (!tx.isActive()) {
+        return 0;
+    }
+
+    Note copy = *note;
+    copy.id = 0;
+    copy.title += QStringLiteral(" (copy)");
+
+    const qint64 now = TimeUtils::toUnix(QDateTime::currentDateTimeUtc());
+    static const QByteArray kPlaceholder(1, '\0');
+
+    sqlite3_stmt* stmt = nullptr;
+    const char* sql =
+        "INSERT INTO notes (encrypted_title, encrypted_body, folder_id, created_at, updated_at, is_favorite) "
+        "VALUES (?, ?, ?, ?, ?, ?);";
+    if (sqlite3_prepare_v2(m_db.handle(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        return 0;
+    }
+    sqlite3_bind_blob(stmt, 1, kPlaceholder.constData(), kPlaceholder.size(), SQLITE_STATIC);
+    sqlite3_bind_blob(stmt, 2, kPlaceholder.constData(), kPlaceholder.size(), SQLITE_STATIC);
+    bindFolderId(stmt, 3, copy.folderId);
+    sqlite3_bind_int64(stmt, 4, now);
+    sqlite3_bind_int64(stmt, 5, now);
+    sqlite3_bind_int(stmt, 6, copy.isFavorite ? 1 : 0);
+    if (!SqliteUtils::stepDone(stmt)) {
+        sqlite3_finalize(stmt);
+        return 0;
+    }
+    sqlite3_finalize(stmt);
+
+    const qint64 newId = sqlite3_last_insert_rowid(m_db.handle());
+    if (newId <= 0) {
+        return 0;
+    }
+
+    copy.id = newId;
+    if (!updateNote(copy, key) || !setNoteTags(newId, copy.tags)) {
+        return 0;
+    }
+
+    const auto idMap = attachments.duplicateAttachments(id, newId, key);
+    if (!idMap.isEmpty()) {
+        copy.body = attachments.remapAttachmentUrls(copy.body, idMap);
+        if (!updateNote(copy, key)) {
+            return 0;
+        }
+    }
+
+    if (!tx.commit()) {
+        return 0;
+    }
+    return newId;
 }
 
 QVector<Folder> NoteRepository::listFolders() const {
@@ -412,32 +539,63 @@ bool NoteRepository::importMarkdownFile(const QString& path, const QByteArray& k
 
 bool NoteRepository::exportMarkdownFile(qint64 noteId, const QString& path, const QByteArray& key) const {
     const auto note = getNote(noteId, key);
-    if (!note) return false;
+    if (!note || note->integrityError) {
+        return false;
+    }
 
-    QFile f(path);
+    QSaveFile f(path);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) {
         return false;
     }
-    f.write(note->body.toUtf8());
-    f.close();
-    return true;
+    const QByteArray payload = note->body.toUtf8();
+    if (f.write(payload) != payload.size()) {
+        return false;
+    }
+    return f.commit();
 }
 
-bool NoteRepository::exportAllMarkdown(const QString& dirPath, const QByteArray& key) const {
+ExportResult NoteRepository::exportAllMarkdown(const QString& dirPath, const QByteArray& key) const {
+    ExportResult result;
+    QSet<QString> usedNames;
     const auto notes = listNotes(key);
+
     for (const Note& n : notes) {
         const auto full = getNote(n.id, key);
-        if (!full) continue;
-        QString safeName = full->title;
+        if (!full) {
+            ++result.failed;
+            continue;
+        }
+        if (full->integrityError) {
+            ++result.skippedIntegrity;
+            continue;
+        }
+
+        QString safeName = full->title.trimmed();
+        if (safeName.isEmpty()) {
+            safeName = QStringLiteral("Untitled Note");
+        }
         for (QChar& c : safeName) {
             if (c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' || c == '"' || c == '<' || c == '>' || c == '|') {
                 c = '_';
             }
         }
-        const QString path = dirPath + '/' + safeName + QStringLiteral(".md");
-        exportMarkdownFile(full->id, path, key);
+
+        QString fileName = safeName;
+        int suffix = 1;
+        while (usedNames.contains(fileName)) {
+            ++result.collisions;
+            fileName = safeName + QStringLiteral(" (%1)").arg(suffix++);
+        }
+        usedNames.insert(fileName);
+
+        const QString path = dirPath + QLatin1Char('/') + fileName + QStringLiteral(".md");
+        if (exportMarkdownFile(full->id, path, key)) {
+            ++result.ok;
+        } else {
+            ++result.failed;
+        }
     }
-    return true;
+    return result;
 }
 
 void NoteRepository::bindFolderId(sqlite3_stmt* stmt, int index, qint64 folderId) const {

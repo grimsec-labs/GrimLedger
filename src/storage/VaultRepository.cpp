@@ -10,6 +10,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QSaveFile>
+#include <QThread>
 #include <QtEndian>
 #include <cstring>
 #include <sqlite3.h>
@@ -254,7 +255,7 @@ std::optional<VaultInfo> VaultRepository::loadVaultInfo() const {
     return info;
 }
 
-bool VaultRepository::storeVaultInfo(const VaultInfo& info) {
+bool VaultRepository::storeVaultInfo(const VaultInfo& info, bool requireChanges) {
     sqlite3_stmt* stmt = nullptr;
     const char* sql =
         "INSERT OR REPLACE INTO vault_metadata "
@@ -272,9 +273,15 @@ bool VaultRepository::storeVaultInfo(const VaultInfo& info) {
     sqlite3_bind_int64(stmt, 5, info.createdAt);
     sqlite3_bind_int64(stmt, 6, info.updatedAt);
 
-    const bool ok = sqlite3_step(stmt) == SQLITE_DONE;
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
+        sqlite3_finalize(stmt);
+        return false;
+    }
     sqlite3_finalize(stmt);
-    return ok;
+    if (requireChanges) {
+        return SqliteUtils::expectChanges(m_db.handle(), 1);
+    }
+    return true;
 }
 
 bool VaultRepository::verificationTokenExists() const {
@@ -428,6 +435,11 @@ bool VaultRepository::migrateDomainBoundCrypto(const QByteArray& key) {
         return true;
     }
 
+    DbTransaction tx(m_db);
+    if (!tx.isActive()) {
+        return false;
+    }
+
     struct NoteRow { qint64 id; QByteArray title; QByteArray body; };
     struct AttachRow { QString id; qint64 noteId; QByteArray data; };
     struct CredRow {
@@ -437,6 +449,7 @@ bool VaultRepository::migrateDomainBoundCrypto(const QByteArray& key) {
         QByteArray password;
         QByteArray url;
         QByteArray notes;
+        bool allowSubdomains = false;
     };
 
     QVector<NoteRow> notes;
@@ -472,7 +485,7 @@ bool VaultRepository::migrateDomainBoundCrypto(const QByteArray& key) {
         || !queryAllRows(
             m_db.handle(),
             "SELECT id, encrypted_label, encrypted_username, encrypted_password, "
-            "encrypted_url, encrypted_notes FROM credentials;",
+            "encrypted_url, encrypted_notes, allow_subdomains FROM credentials;",
             [&](sqlite3_stmt* credStmt) {
                 CredRow row;
                 row.id = sqlite3_column_int64(credStmt, 0);
@@ -485,6 +498,7 @@ bool VaultRepository::migrateDomainBoundCrypto(const QByteArray& key) {
                 row.password = readBlob(3);
                 row.url = readBlob(4);
                 row.notes = readBlob(5);
+                row.allowSubdomains = sqlite3_column_int(credStmt, 6) != 0;
                 credentials.append(row);
                 return true;
             })) {
@@ -507,6 +521,7 @@ bool VaultRepository::migrateDomainBoundCrypto(const QByteArray& key) {
         QByteArray password;
         QByteArray url;
         QByteArray notes;
+        QByteArray fillPolicy;
     };
 
     QVector<PreparedNote> preparedNotes;
@@ -588,13 +603,18 @@ bool VaultRepository::migrateDomainBoundCrypto(const QByteArray& key) {
             }
             *outs[i] = *enc;
         }
+        const QByteArray policyPlain(1, row.allowSubdomains ? '\x01' : '\x00');
+        const auto encPolicy = CryptoManager::encryptField(
+            policyPlain,
+            key,
+            CryptoManager::credentialFillPolicyAssociatedData(row.id));
+        if (!encPolicy) {
+            return false;
+        }
+        out.fillPolicy = *encPolicy;
         preparedCredentials.append(out);
     }
 
-    DbTransaction tx(m_db);
-    if (!tx.isActive()) {
-        return false;
-    }
     for (const PreparedNote& row : preparedNotes) {
         sqlite3_stmt* upd = nullptr;
         const char* sql =
@@ -631,7 +651,8 @@ bool VaultRepository::migrateDomainBoundCrypto(const QByteArray& key) {
         sqlite3_stmt* upd = nullptr;
         const char* sql =
             "UPDATE credentials SET encrypted_label = ?, encrypted_username = ?, "
-            "encrypted_password = ?, encrypted_url = ?, encrypted_notes = ? WHERE id = ?;";
+            "encrypted_password = ?, encrypted_url = ?, encrypted_notes = ?, "
+            "encrypted_fill_policy = ? WHERE id = ?;";
         if (sqlite3_prepare_v2(m_db.handle(), sql, -1, &upd, nullptr) != SQLITE_OK) {
             return false;
         }
@@ -640,7 +661,8 @@ bool VaultRepository::migrateDomainBoundCrypto(const QByteArray& key) {
         sqlite3_bind_blob(upd, 3, row.password.constData(), row.password.size(), SQLITE_TRANSIENT);
         sqlite3_bind_blob(upd, 4, row.url.constData(), row.url.size(), SQLITE_TRANSIENT);
         sqlite3_bind_blob(upd, 5, row.notes.constData(), row.notes.size(), SQLITE_TRANSIENT);
-        sqlite3_bind_int64(upd, 6, row.id);
+        sqlite3_bind_blob(upd, 6, row.fillPolicy.constData(), row.fillPolicy.size(), SQLITE_TRANSIENT);
+        sqlite3_bind_int64(upd, 7, row.id);
         if (!SqliteUtils::stepDone(upd) || !SqliteUtils::expectChanges(m_db.handle(), 1)) {
             sqlite3_finalize(upd);
             return false;
@@ -677,6 +699,12 @@ bool VaultRepository::changeMasterPassword(
         return false;
     }
 
+    DbTransaction tx(m_db);
+    if (!tx.isActive()) {
+        CryptoManager::secureZero(*newKey);
+        return false;
+    }
+
     struct NoteRow { qint64 id; QByteArray title; QByteArray body; };
     struct AttachRow { QString id; QByteArray data; };
     struct CredRow {
@@ -686,6 +714,8 @@ bool VaultRepository::changeMasterPassword(
         QByteArray password;
         QByteArray url;
         QByteArray notes;
+        bool allowSubdomains = false;
+        QByteArray fillPolicy;
     };
     QVector<NoteRow> noteRows;
     QVector<AttachRow> attachRows;
@@ -719,7 +749,8 @@ bool VaultRepository::changeMasterPassword(
         || !queryAllRows(
             m_db.handle(),
             "SELECT id, encrypted_label, encrypted_username, encrypted_password, "
-            "encrypted_url, encrypted_notes FROM credentials;",
+            "encrypted_url, encrypted_notes, allow_subdomains, encrypted_fill_policy "
+            "FROM credentials;",
             [&](sqlite3_stmt* credStmt) {
                 CredRow row;
                 row.id = sqlite3_column_int64(credStmt, 0);
@@ -732,6 +763,8 @@ bool VaultRepository::changeMasterPassword(
                 row.password = readBlob(3);
                 row.url = readBlob(4);
                 row.notes = readBlob(5);
+                row.allowSubdomains = sqlite3_column_int(credStmt, 6) != 0;
+                row.fillPolicy = readBlob(7);
                 credRows.append(row);
                 return true;
             })) {
@@ -748,6 +781,7 @@ bool VaultRepository::changeMasterPassword(
         QByteArray password;
         QByteArray url;
         QByteArray notes;
+        QByteArray fillPolicy;
     };
     QVector<PreparedNote> preparedNotes;
     QVector<PreparedAttach> preparedAttachments;
@@ -831,6 +865,27 @@ bool VaultRepository::changeMasterPassword(
             }
             *outs[i] = *enc;
         }
+
+        bool allowSubdomains = row.allowSubdomains;
+        if (!row.fillPolicy.isEmpty()) {
+            auto policyPlain = CryptoManager::decryptField(
+                row.fillPolicy,
+                currentKey,
+                CryptoManager::credentialFillPolicyAssociatedData(row.id));
+            if (policyPlain && !policyPlain->isEmpty()) {
+                allowSubdomains = (*policyPlain)[0] != '\x00';
+            }
+        }
+        const QByteArray policyPlainBytes(1, allowSubdomains ? '\x01' : '\x00');
+        const auto encPolicy = CryptoManager::encryptField(
+            policyPlainBytes,
+            *newKey,
+            CryptoManager::credentialFillPolicyAssociatedData(row.id));
+        if (!encPolicy) {
+            CryptoManager::secureZero(*newKey);
+            return false;
+        }
+        out.fillPolicy = *encPolicy;
         preparedCreds.append(out);
     }
 
@@ -841,11 +896,6 @@ bool VaultRepository::changeMasterPassword(
         return false;
     }
 
-    DbTransaction tx(m_db);
-    if (!tx.isActive()) {
-        CryptoManager::secureZero(*newKey);
-        return false;
-    }
     sqlite3_stmt* verifyStmt = nullptr;
     const char* verifySql = "UPDATE app_metadata SET value = ? WHERE key = 'verify';";
     if (sqlite3_prepare_v2(m_db.handle(), verifySql, -1, &verifyStmt, nullptr) != SQLITE_OK) {
@@ -900,7 +950,8 @@ bool VaultRepository::changeMasterPassword(
         sqlite3_stmt* upd = nullptr;
         const char* sql =
             "UPDATE credentials SET encrypted_label = ?, encrypted_username = ?, "
-            "encrypted_password = ?, encrypted_url = ?, encrypted_notes = ? WHERE id = ?;";
+            "encrypted_password = ?, encrypted_url = ?, encrypted_notes = ?, "
+            "encrypted_fill_policy = ? WHERE id = ?;";
         if (sqlite3_prepare_v2(m_db.handle(), sql, -1, &upd, nullptr) != SQLITE_OK) {
             CryptoManager::secureZero(*newKey);
             return false;
@@ -910,7 +961,8 @@ bool VaultRepository::changeMasterPassword(
         sqlite3_bind_blob(upd, 3, row.password.constData(), row.password.size(), SQLITE_TRANSIENT);
         sqlite3_bind_blob(upd, 4, row.url.constData(), row.url.size(), SQLITE_TRANSIENT);
         sqlite3_bind_blob(upd, 5, row.notes.constData(), row.notes.size(), SQLITE_TRANSIENT);
-        sqlite3_bind_int64(upd, 6, row.id);
+        sqlite3_bind_blob(upd, 6, row.fillPolicy.constData(), row.fillPolicy.size(), SQLITE_TRANSIENT);
+        sqlite3_bind_int64(upd, 7, row.id);
         if (!SqliteUtils::stepDone(upd) || !SqliteUtils::expectChanges(m_db.handle(), 1)) {
             sqlite3_finalize(upd);
             CryptoManager::secureZero(*newKey);
@@ -921,7 +973,7 @@ bool VaultRepository::changeMasterPassword(
 
     info->salt = newSalt;
     info->updatedAt = TimeUtils::toUnix(QDateTime::currentDateTimeUtc());
-    if (!storeVaultInfo(*info) || !tx.commit()) {
+    if (!storeVaultInfo(*info, true) || !tx.commit()) {
         CryptoManager::secureZero(*newKey);
         return false;
     }
@@ -959,11 +1011,25 @@ bool VaultRepository::exportEncryptedBackupV2(const QString& destPath, const QSt
         return false;
     }
     int backupRc = SQLITE_OK;
+    int backupRetries = 0;
+    constexpr int kMaxBackupRetries = 20;
     do {
         backupRc = sqlite3_backup_step(backup, 128);
+        if (backupRc == SQLITE_BUSY || backupRc == SQLITE_LOCKED) {
+            if (++backupRetries > kMaxBackupRetries) {
+                break;
+            }
+            QThread::msleep(50);
+        }
     } while (backupRc == SQLITE_OK || backupRc == SQLITE_BUSY || backupRc == SQLITE_LOCKED);
     sqlite3_backup_finish(backup);
     if (backupRc != SQLITE_DONE) {
+        sqlite3_close(snapshotDb);
+        return false;
+    }
+
+    QString quickCheckError;
+    if (!quickCheckOk(snapshotDb, &quickCheckError)) {
         sqlite3_close(snapshotDb);
         return false;
     }
@@ -1353,6 +1419,13 @@ RestoreResult VaultRepository::restoreLegacyBackupInSession(
     }
 
     return installValidatedPlaintextVault(tempPath, liveVaultPath, errorOut);
+}
+
+RestoreResult VaultRepository::installStagedVault(
+    const QString& stagedPath,
+    const QString& liveVaultPath,
+    QString* errorOut) {
+    return installValidatedPlaintextVault(stagedPath, liveVaultPath, errorOut);
 }
 
 RestoreResult VaultRepository::installValidatedPlaintextVault(
