@@ -1,0 +1,9 @@
+build/
+cmake-build-*/
+.vs/
+.vscode/
+*.user
+CMakeCache.txt
+CMakeFiles/
+*.grim
+*.grimbak
