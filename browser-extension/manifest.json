@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "GrimLedger Bridge",
+  "version": "1.0.0",
+  "description": "Fill logins from GrimLedger vault keys via native messaging.",
+  "permissions": ["nativeMessaging", "activeTab", "scripting"],
+  "host_permissions": ["http://*/*", "https://*/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "GrimLedger",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

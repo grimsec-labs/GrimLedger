@@ -75,7 +75,9 @@ MainWindow::MainWindow(Database& db, VaultSession& session, QWidget* parent)
     previewTimer->start();
 }
 
-MainWindow::~MainWindow() = default;
+MainWindow::~MainWindow() {
+    stopBridge();
+}
 
 bool MainWindow::nativeEvent(const QByteArray& eventType, void* message, qintptr* result) {
     if (FramelessResize::handleNativeEvent(this, eventType, message, result)) {
@@ -303,6 +305,7 @@ void MainWindow::buildUi() {
 
     applyAccent(m_accent);
     installEventFilter(this);
+    startBridge();
 }
 
 bool MainWindow::eventFilter(QObject* obj, QEvent* event) {
@@ -789,6 +792,7 @@ void MainWindow::onLockVault() {
     }
 
     m_lockingVault = true;
+    stopBridge();
     saveCurrentCredential(false);
     saveCurrentNote(false, false, false);
     m_session.lock();
@@ -1162,4 +1166,35 @@ void MainWindow::onInsertImage() {
 void MainWindow::updateStatusBar() {
     m_wordLabel->setText(QStringLiteral("Words: %1").arg(m_editor->wordCount()));
     m_charLabel->setText(QStringLiteral("Chars: %1").arg(m_editor->charCount()));
+}
+
+void MainWindow::startBridge() {
+    if (m_bridge) {
+        return;
+    }
+
+    m_bridge = std::make_unique<CredentialBridgeServer>(this);
+    m_bridge->setRepository(m_credentials.get());
+    m_bridge->setUnlockedChecker([this]() { return m_session.isUnlocked(); });
+    m_bridge->setSessionKeyProvider([this]() { return m_session.key(); });
+    m_bridge->setConfirmFillHandler([this](const QString& label, const QString& origin) {
+        return confirmBridgeFill(label, origin);
+    });
+    m_bridge->start();
+}
+
+void MainWindow::stopBridge() {
+    if (!m_bridge) {
+        return;
+    }
+    m_bridge->stop();
+    m_bridge.reset();
+}
+
+bool MainWindow::confirmBridgeFill(const QString& label, const QString& origin) {
+    return DialogUtils::question(
+        this,
+        QStringLiteral("Browser Fill"),
+        QStringLiteral("Allow browser extension to fill \"%1\" on %2?")
+            .arg(label, origin));
 }

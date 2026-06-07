@@ -14,6 +14,7 @@
 #include "storage/AttachmentRepository.h"
 #include "markdown/MarkdownRenderer.h"
 #include "ui/Sidebar.h"
+#include "bridge/CredentialBridgeServer.h"
 
 class Sidebar;
 class NoteList;
@@ -97,6 +98,9 @@ private:
     void updateStatusBar();
     void updatePreview();
     MarkdownRenderer::ImageUrlResolver imageResolver() const;
+    void startBridge();
+    void stopBridge();
+    bool confirmBridgeFill(const QString& label, const QString& origin);
 
 protected:
     bool eventFilter(QObject* obj, QEvent* event) override;
@@ -108,6 +112,7 @@ protected:
     std::unique_ptr<NoteRepository> m_notes;
     std::unique_ptr<CredentialRepository> m_credentials;
     std::unique_ptr<VaultRepository> m_vault;
+    std::unique_ptr<CredentialBridgeServer> m_bridge;
 
     Sidebar* m_sidebar = nullptr;
     QStackedWidget* m_listStack = nullptr;

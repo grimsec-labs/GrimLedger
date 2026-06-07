@@ -1,0 +1,9 @@
+{
+  "name": "com.grimledger.bridge",
+  "description": "GrimLedger native messaging host",
+  "path": "@GRIMLEDGER_HOST_PATH@",
+  "type": "stdio",
+  "allowed_origins": [
+    "@CHROME_EXTENSION_ORIGIN@"
+  ]
+}

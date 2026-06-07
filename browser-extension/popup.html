@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { font-family: Segoe UI, sans-serif; background: #0a0a0c; color: #d4d4dc; margin: 0; padding: 12px; width: 280px; }
+    h1 { font-size: 14px; margin: 0 0 8px; color: #ff8844; letter-spacing: 1px; }
+    #status { font-size: 12px; color: #887766; margin-bottom: 10px; }
+    button { width: 100%; margin: 4px 0; padding: 8px; background: #111114; color: #d4d4dc; border: 1px solid #2a2a30; cursor: pointer; }
+    button:hover { border-color: #ff8844; }
+    .match { text-align: left; }
+    .error { color: #cc4444; }
+  </style>
+</head>
+<body>
+  <h1>⛨ GRIMLEDGER</h1>
+  <div id="status">Checking vault...</div>
+  <div id="matches"></div>
+  <button id="refresh">Refresh matches</button>
+  <script src="popup.js"></script>
+</body>
+</html>

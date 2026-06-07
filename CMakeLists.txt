@@ -7,7 +7,7 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Network)
 
 # --- libsodium (Argon2id + XChaCha20-Poly1305) ---
 include(FetchContent)
@@ -97,6 +97,8 @@ set(SOURCES
     src/utils/ClipboardUtils.cpp
     src/utils/AppSettings.cpp
     src/utils/DialogUtils.cpp
+    src/bridge/OriginMatcher.cpp
+    src/bridge/CredentialBridgeServer.cpp
     src/markdown/MarkdownRenderer.cpp
     src/markdown/SyntaxHighlighter.cpp
 )
@@ -141,6 +143,8 @@ set(HEADERS
     src/utils/ClipboardUtils.h
     src/utils/AppSettings.h
     src/utils/DialogUtils.h
+    src/bridge/OriginMatcher.h
+    src/bridge/CredentialBridgeServer.h
     src/markdown/MarkdownRenderer.h
     src/markdown/SyntaxHighlighter.h
 )
@@ -166,9 +170,16 @@ target_link_libraries(GrimLedger PRIVATE
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets
+    Qt6::Network
     sqlite3_static
     sodium
 )
+
+add_executable(grimledger_host tools/grimledger_host/main.cpp)
+target_link_libraries(grimledger_host PRIVATE Qt6::Core Qt6::Network)
+if(WIN32)
+    set_target_properties(grimledger_host PROPERTIES WIN32_EXECUTABLE FALSE)
+endif()
 
 if(WIN32)
     set_target_properties(GrimLedger PROPERTIES WIN32_EXECUTABLE TRUE)
