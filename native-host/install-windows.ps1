@@ -14,6 +14,11 @@ if (-not $HostExe) {
         $HostExe = $flatHost
     }
 }
+if (-not (Test-Path $HostExe)) {
+    Write-Host "Native host not found: $HostExe"
+    Write-Host "Build GrimLedger first (grimledger_host.exe must exist)."
+    exit 1
+}
 $HostExe = (Resolve-Path $HostExe).Path
 
 if (-not $ExtensionId) {
@@ -27,10 +32,10 @@ $manifestTemplate = Join-Path $PSScriptRoot "com.grimledger.bridge.json"
 $manifestOut = Join-Path $env:TEMP "com.grimledger.bridge.json"
 $origin = "chrome-extension://$ExtensionId/"
 
-(Get-Content $manifestTemplate -Raw)
-    .Replace("@GRIMLEDGER_HOST_PATH@", $HostExe.Replace("\", "\\"))
-    .Replace("@CHROME_EXTENSION_ORIGIN@", $origin) |
-    Set-Content -Path $manifestOut -Encoding UTF8
+$manifest = Get-Content $manifestTemplate -Raw
+$manifest = $manifest.Replace("@GRIMLEDGER_HOST_PATH@", $HostExe.Replace("\", "\\"))
+$manifest = $manifest.Replace("@CHROME_EXTENSION_ORIGIN@", $origin)
+Set-Content -Path $manifestOut -Value $manifest -Encoding UTF8
 
 $regPath = "HKCU:\Software\Google\Chrome\NativeMessagingHosts\com.grimledger.bridge"
 New-Item -Path $regPath -Force | Out-Null
