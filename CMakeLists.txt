@@ -15,10 +15,13 @@ endif()
 
 # --- libsodium ---
 include(FetchContent)
+# GL-SEC-009: pin to the immutable commit SHA of the 1.0.20-RELEASE tag rather than
+# the mutable tag name, so a re-pointed tag or compromised mirror cannot substitute
+# a different libsodium into the build.
 FetchContent_Declare(
     libsodium
     GIT_REPOSITORY https://github.com/jedisct1/libsodium.git
-    GIT_TAG        1.0.20-RELEASE
+    GIT_TAG        9511c982fb1d046470a8b42aa36556cdb7da15de  # 1.0.20-RELEASE
     GIT_SHALLOW    TRUE
 )
 FetchContent_GetProperties(libsodium)

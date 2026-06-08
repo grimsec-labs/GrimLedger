@@ -46,9 +46,9 @@ bool writeSessionEndpoint(const QString& endpoint) {
     if (file.write(bytes) != bytes.size()) {
         return false;
     }
-#if defined(Q_OS_WIN)
+    // GL-SEC-004: restrict to owner read/write on all platforms (POSIX -> 0600) so
+    // other local users cannot read the bridge session token / endpoint name.
     file.setPermissions(QFile::ReadOwner | QFile::WriteOwner);
-#endif
     return true;
 }
 
@@ -99,9 +99,9 @@ bool writeSessionToken(const QByteArray& token) {
     if (file.write(hex) != hex.size()) {
         return false;
     }
-#if defined(Q_OS_WIN)
+    // GL-SEC-004: restrict to owner read/write on all platforms (POSIX -> 0600) so
+    // other local users cannot read the bridge session token / endpoint name.
     file.setPermissions(QFile::ReadOwner | QFile::WriteOwner);
-#endif
     return true;
 }
 

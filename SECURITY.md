@@ -16,7 +16,7 @@ No custom ciphers, no homegrown KDF, no ECB, no unauthenticated encryption.
 - Each ciphertext includes a unique nonce (prepended).
 - Domain-bound AEAD prevents undetected ciphertext swapping between notes, fields, or purposes.
 - Credential `allow_subdomains` fill policy is stored in authenticated `encrypted_fill_policy` blobs (AEAD with per-credential AAD).
-- The SQLite file may contain encrypted BLOBs and unencrypted structural metadata (timestamps, folder names, tag names, favorite flags).
+- GrimLedger uses **field-level** encryption, not whole-file (SQLCipher) encryption. The SQLite file therefore contains encrypted BLOBs **plus unencrypted structural/metadata columns**, specifically: row timestamps (`created_at`/`updated_at`), folder names, tag names, favorite flags, and — for attachments — the original filename (`original_name`), `source_url`, `acquisition_note`, and `mime_type`. The security chronicle's `event_type` is also stored in cleartext (the event detail is encrypted). An attacker with the vault file at rest can read this metadata without the master password. Secret content (note titles/bodies, credential fields, attachment bytes, TOTP secrets) is always encrypted.
 - `PRAGMA secure_delete = ON` is enabled to reduce recovery of deleted ciphertext from free pages (not guaranteed physical erasure).
 
 ## Data in Memory
@@ -38,10 +38,29 @@ No custom ciphers, no homegrown KDF, no ECB, no unauthenticated encryption.
 - Restore never deletes the live vault until the replacement passes integrity and cryptographic checks.
 - If restore succeeds but the `.bak` cleanup fails, GrimLedger still locks the session and forces re-login (`InstalledWithCleanupWarning`).
 
+## Fast Unlock (optional, opt-in)
+
+Fast Unlock trades some security for convenience and is off by default.
+
+- **Windows — "Quick Unlock (Windows account)":** the vault key is wrapped with a secret
+  protected by **user-scoped DPAPI** (`CryptProtectData`). This is **NOT** Windows Hello
+  and requires **no biometric/PIN gesture**: any code running as the signed-in Windows
+  user can unwrap it. Treat it as "anyone with your unlocked Windows account can open the
+  vault without the master password." Keep your Windows account locked. (Earlier builds
+  labelled this "Windows Hello", which overstated the protection.)
+- **Android — biometric unlock:** the vault key is stored only in Keystore-backed
+  `EncryptedSharedPreferences` whose master key requires recent device authentication
+  (`setUserAuthenticationRequired`). The key is **never** written to plaintext preferences.
+  Note that an enabled fast unlock stores a key equivalent to your master password, gated
+  by the OS auth window rather than a fresh in-app biometric prompt for every unlock.
+- In all cases the **master password remains the primary unlock** and fast unlock can be
+  disabled in Settings, which clears the stored material.
+
 ## Optional Self-Destruct
 
 - Settings may enable destruction of the vault after three failed unlock attempts.
 - This is an explicit, opt-in anti-coercion feature — not brute-force protection.
+- The failed-attempt counter is persisted, so it is not reset by restarting the app.
 - Anyone with access to the login screen can trigger it. Back up your vault first.
 
 ## Operational Guidance

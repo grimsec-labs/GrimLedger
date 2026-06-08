@@ -4,7 +4,9 @@
 
 namespace {
 
-int g_failedUnlockAttempts = 0;
+// GL-SEC-005: the failed-unlock counter is persisted (not a process-lifetime static)
+// so the opt-in self-destruct cannot be bypassed by simply restarting the app.
+constexpr auto kFailedAttemptsKey = "security/failedUnlockAttempts";
 
 } // namespace
 
@@ -22,15 +24,21 @@ void AppSettings::setSelfDestructEnabled(bool enabled) {
 }
 
 int AppSettings::failedUnlockAttempts() {
-    return g_failedUnlockAttempts;
+    QSettings settings;
+    return settings.value(QLatin1String(kFailedAttemptsKey), 0).toInt();
 }
 
 void AppSettings::incrementFailedUnlockAttempts() {
-    ++g_failedUnlockAttempts;
+    QSettings settings;
+    const int next = settings.value(QLatin1String(kFailedAttemptsKey), 0).toInt() + 1;
+    settings.setValue(QLatin1String(kFailedAttemptsKey), next);
+    settings.sync();
 }
 
 void AppSettings::resetFailedUnlockAttempts() {
-    g_failedUnlockAttempts = 0;
+    QSettings settings;
+    settings.setValue(QLatin1String(kFailedAttemptsKey), 0);
+    settings.sync();
 }
 
 bool AppSettings::browserBridgeEnabled() {

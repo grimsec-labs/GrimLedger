@@ -39,6 +39,10 @@ Result checkPassword(const QString& password) {
     const QUrl url(QStringLiteral("https://api.pwnedpasswords.com/range/") + prefix);
     QNetworkRequest request(url);
     request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("GrimLedger/1.0"));
+    // GL-SEC-011: request response padding so a network observer cannot infer the
+    // queried hash-prefix bucket size from the response length. Padded entries carry
+    // a count of 0 and are ignored below.
+    request.setRawHeader("Add-Padding", "true");
     request.setTransferTimeout(8000);
 
     QEventLoop loop;
@@ -68,9 +72,10 @@ Result checkPassword(const QString& password) {
             continue;
         }
         if (parts[0].compare(suffix, Qt::CaseInsensitive) == 0) {
+            const int count = parts[1].toInt();
             result.ok = true;
-            result.breached = true;
-            result.count = parts[1].toInt();
+            result.breached = count > 0;  // padded entries report a count of 0
+            result.count = count;
             return result;
         }
     }

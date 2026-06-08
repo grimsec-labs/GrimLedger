@@ -99,6 +99,9 @@ bool CredentialBridgeServer::start() {
         return false;
     }
 
+    // GL-SEC-004: restrict the local socket to the current user so other local
+    // accounts cannot connect to the bridge (defense in depth alongside the token).
+    m_server->setSocketOptions(QLocalServer::UserAccessOption);
     QLocalServer::removeServer(m_endpoint);
     if (!m_server->listen(m_endpoint)) {
         BridgeAuth::clearSessionToken();

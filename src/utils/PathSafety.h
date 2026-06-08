@@ -8,6 +8,8 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#else
+#include <sys/stat.h>
 #endif
 
 namespace PathSafety {
@@ -54,9 +56,15 @@ inline bool sharesHardLink(const QString& a, const QString& b) {
     CloseHandle(hb);
     return ok;
 #else
-    Q_UNUSED(a);
-    Q_UNUSED(b);
-    return false;
+    // GL-SEC-014: POSIX hardlink identity — two paths share storage iff they have the
+    // same device id and inode number.
+    struct stat sa {};
+    struct stat sb {};
+    if (::stat(a.toLocal8Bit().constData(), &sa) != 0
+        || ::stat(b.toLocal8Bit().constData(), &sb) != 0) {
+        return false;
+    }
+    return sa.st_dev == sb.st_dev && sa.st_ino == sb.st_ino;
 #endif
 }
 

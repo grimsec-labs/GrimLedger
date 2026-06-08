@@ -93,9 +93,10 @@ QString currentCode(const QString& secret, int periodSeconds, int digits) {
         | (static_cast<quint32>(hmac[offset + 2]) << 8)
         | static_cast<quint32>(hmac[offset + 3]);
 
-    const quint32 mod = static_cast<quint32>(1);
-    quint32 divisor = mod;
-    for (int i = 1; i < digits; ++i) {
+    // RFC 4226/6238: code = binary mod 10^digits. (Previously looped digits-1
+    // times, producing 10^(digits-1) and only 5 significant digits — GL-SEC-010.)
+    quint32 divisor = 1;
+    for (int i = 0; i < digits; ++i) {
         divisor *= 10;
     }
     return formatCode(binary % divisor, digits);
