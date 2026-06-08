@@ -137,7 +137,7 @@ void SettingsWindow::buildUi() {
 
     if (PlatformBiometricUnlock::isPlatformSupported()) {
         auto* helloRow = new QHBoxLayout();
-        m_enableHelloBtn = new QPushButton(QStringLiteral("Enable Windows Hello Unlock"), this);
+        m_enableHelloBtn = new QPushButton(QStringLiteral("Enable Quick Unlock (Windows account)"), this);
         m_disableHelloBtn = new QPushButton(QStringLiteral("Disable"), this);
         m_disableHelloBtn->setObjectName(QStringLiteral("SecondaryButton"));
         m_disableHelloBtn->setEnabled(PlatformBiometricUnlock::isConfigured());
@@ -375,7 +375,7 @@ void SettingsWindow::resetSettings() {
     if (!DialogUtils::question(
             this,
             QStringLiteral("Reset Settings"),
-            QStringLiteral("Reset all preferences to defaults?\n\nVault data, backups, and Windows Hello configuration are not affected."))) {
+            QStringLiteral("Reset all preferences to defaults?\n\nVault data, backups, and Quick Unlock configuration are not affected."))) {
         return;
     }
 

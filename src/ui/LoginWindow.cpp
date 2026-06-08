@@ -101,7 +101,7 @@ void LoginWindow::buildUi() {
     m_actionButton->setObjectName(QStringLiteral("PrimaryButton"));
     connect(m_actionButton, &QPushButton::clicked, this, &LoginWindow::onUnlockClicked);
 
-    m_helloButton = new QPushButton(QStringLiteral("Unlock with Windows Hello"), this);
+    m_helloButton = new QPushButton(QStringLiteral("Quick Unlock (Windows account)"), this);
     m_helloButton->setObjectName(QStringLiteral("SecondaryButton"));
     m_helloButton->hide();
     connect(m_helloButton, &QPushButton::clicked, this, &LoginWindow::helloUnlockRequested);

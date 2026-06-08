@@ -17,11 +17,14 @@ Java_org_grimseclabs_grimledger_GrimLedgerBridge_nativeSetVaultController(JNIEnv
 extern "C" JNIEXPORT jstring JNICALL
 Java_org_grimseclabs_grimledger_GrimLedgerBridge_nativeCredentialsForOrigin(
     JNIEnv* env, jobject, jstring originUrl) {
-    if (!g_vaultController || !g_vaultController->isUnlocked()) {
+    if (!g_vaultController || !g_vaultController->isUnlocked() || !originUrl) {
         return env->NewStringUTF("[]");
     }
 
     const char* originChars = env->GetStringUTFChars(originUrl, nullptr);
+    if (!originChars) {
+        return env->NewStringUTF("[]");
+    }
     const QString origin = QString::fromUtf8(originChars);
     env->ReleaseStringUTFChars(originUrl, originChars);
 
@@ -33,12 +36,17 @@ Java_org_grimseclabs_grimledger_GrimLedgerBridge_nativeCredentialsForOrigin(
 extern "C" JNIEXPORT jstring JNICALL
 Java_org_grimseclabs_grimledger_GrimLedgerBridge_nativeFillCredential(
     JNIEnv* env, jobject, jstring credentialId, jstring field) {
-    if (!g_vaultController || !g_vaultController->isUnlocked()) {
+    if (!g_vaultController || !g_vaultController->isUnlocked() || !credentialId || !field) {
         return env->NewStringUTF("");
     }
 
     const char* idChars = env->GetStringUTFChars(credentialId, nullptr);
     const char* fieldChars = env->GetStringUTFChars(field, nullptr);
+    if (!idChars || !fieldChars) {
+        if (idChars) env->ReleaseStringUTFChars(credentialId, idChars);
+        if (fieldChars) env->ReleaseStringUTFChars(field, fieldChars);
+        return env->NewStringUTF("");
+    }
     const QString value = g_vaultController->credentialField(
         QString::fromUtf8(idChars),
         QString::fromUtf8(fieldChars));

@@ -44,9 +44,13 @@ bool isPlatformSupported() {
         androidContext());
 }
 
+// Non-secret marker only. The wrapped vault key itself lives exclusively in
+// Keystore-backed EncryptedSharedPreferences on the Java side (see GL-SEC-002).
+static const QString kEnabledKey = QStringLiteral("security/androidBiometricEnabled");
+
 bool isConfigured() {
     QSettings settings;
-    return settings.contains(QStringLiteral("security/androidBiometricWrappedKey"));
+    return settings.value(kEnabledKey, false).toBool();
 }
 
 QString lastError() {
@@ -63,43 +67,51 @@ bool enable(const QByteArray& vaultKey, const QString& masterPassword) {
 
     QJniEnvironment env;
     const jbyteArray keyArray = env->NewByteArray(vaultKey.size());
+    if (!keyArray) {
+        g_lastError = QStringLiteral("Could not allocate key buffer.");
+        return false;
+    }
     env->SetByteArrayRegion(keyArray, 0, vaultKey.size(),
         reinterpret_cast<const jbyte*>(vaultKey.constData()));
 
-    const QJniObject wrapped = QJniObject::callStaticObjectMethod(
+    // storeVaultKey writes the key into Keystore-backed EncryptedSharedPreferences
+    // and returns a boolean. The key is never returned to native code or persisted
+    // in QSettings.
+    const jboolean stored = QJniObject::callStaticMethod<jboolean>(
         "org/grimseclabs/grimledger/GrimLedgerBiometricUnlock",
-        "wrapVaultKey",
-        "(Landroid/content/Context;[B)Ljava/lang/String;",
+        "storeVaultKey",
+        "(Landroid/content/Context;[B)Z",
         androidContext(),
         keyArray);
 
+    env->SetByteArrayRegion(keyArray, 0, vaultKey.size(),
+        reinterpret_cast<const jbyte*>(QByteArray(vaultKey.size(), '\0').constData()));
     env->DeleteLocalRef(keyArray);
 
-    if (!wrapped.isValid()) {
+    if (!stored) {
         g_lastError = QStringLiteral("Failed to store biometric unlock data.");
         return false;
     }
 
     QSettings settings;
-    settings.setValue(QStringLiteral("security/androidBiometricWrappedKey"), wrapped.toString());
+    settings.setValue(kEnabledKey, true);
     return true;
 }
 
 bool tryUnlock(QByteArray& vaultKeyOut) {
     g_lastError.clear();
-    QSettings settings;
-    const QString wrapped = settings.value(QStringLiteral("security/androidBiometricWrappedKey")).toString();
-    if (wrapped.isEmpty()) {
+    if (!isConfigured()) {
         g_lastError = QStringLiteral("Biometric unlock is not configured.");
         return false;
     }
 
+    // Read the key from Keystore-backed storage only. Returns null if the OS
+    // user-authentication requirement is not currently satisfied.
     const QJniObject bytes = QJniObject::callStaticObjectMethod(
         "org/grimseclabs/grimledger/GrimLedgerBiometricUnlock",
-        "unwrapVaultKey",
-        "(Landroid/content/Context;Ljava/lang/String;)[B",
-        androidContext(),
-        QJniObject::fromString(wrapped).object<jstring>());
+        "loadVaultKey",
+        "(Landroid/content/Context;)[B",
+        androidContext());
 
     if (!bytes.isValid()) {
         g_lastError = QStringLiteral("Biometric unlock was denied or unavailable.");
@@ -108,8 +120,16 @@ bool tryUnlock(QByteArray& vaultKeyOut) {
 
     QJniEnvironment env;
     const jbyteArray array = bytes.object<jbyteArray>();
+    if (!array) {
+        g_lastError = QStringLiteral("Biometric unlock returned no key.");
+        return false;
+    }
     const jsize len = env->GetArrayLength(array);
     jbyte* data = env->GetByteArrayElements(array, nullptr);
+    if (!data) {
+        g_lastError = QStringLiteral("Biometric unlock returned no key.");
+        return false;
+    }
     vaultKeyOut = QByteArray(reinterpret_cast<char*>(data), len);
     env->ReleaseByteArrayElements(array, data, JNI_ABORT);
     return vaultKeyOut.size() == CryptoManager::kKeySize;
@@ -117,7 +137,7 @@ bool tryUnlock(QByteArray& vaultKeyOut) {
 
 void disable() {
     QSettings settings;
-    settings.remove(QStringLiteral("security/androidBiometricWrappedKey"));
+    settings.remove(kEnabledKey);
     QJniObject::callStaticMethod<void>(
         "org/grimseclabs/grimledger/GrimLedgerBiometricUnlock",
         "clear",

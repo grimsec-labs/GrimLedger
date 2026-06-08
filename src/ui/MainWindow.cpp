@@ -852,8 +852,8 @@ void MainWindow::onEnableHelloUnlock() {
     bool ok = false;
     const QString password = GrimInputDialog::getPassword(
         this,
-        QStringLiteral("Enable Windows Hello"),
-        QStringLiteral("Re-enter your master password to enable convenience unlock:"),
+        QStringLiteral("Enable Quick Unlock"),
+        QStringLiteral("Re-enter your master password to enable Quick Unlock:"),
         &ok);
     if (!ok || password.isEmpty()) {
         return;
@@ -863,7 +863,7 @@ void MainWindow::onEnableHelloUnlock() {
     if (!m_vault->unlockVault(password, verifyKey)) {
         DialogUtils::warning(
             this,
-            QStringLiteral("Windows Hello"),
+            QStringLiteral("Quick Unlock"),
             QStringLiteral("Master password verification failed."));
         return;
     }
@@ -872,7 +872,7 @@ void MainWindow::onEnableHelloUnlock() {
         CryptoManager::secureZero(verifyKey);
         DialogUtils::warning(
             this,
-            QStringLiteral("Windows Hello"),
+            QStringLiteral("Quick Unlock"),
             PlatformBiometricUnlock::lastError());
         return;
     }
@@ -880,16 +880,22 @@ void MainWindow::onEnableHelloUnlock() {
 
     DialogUtils::information(
         this,
-        QStringLiteral("Windows Hello"),
-        QStringLiteral("Convenience unlock enabled. Master password fallback remains available."));
+        QStringLiteral("Quick Unlock"),
+        QStringLiteral(
+            "Quick Unlock enabled.\n\n"
+            "This protects the vault key with your Windows user account (DPAPI). "
+            "It does NOT require a separate Windows Hello / biometric gesture: anyone "
+            "signed in to your Windows account can unlock the vault without the master "
+            "password, so keep your account locked when away. Your master password "
+            "remains available as the primary unlock."));
 }
 
 void MainWindow::onDisableHelloUnlock() {
     PlatformBiometricUnlock::disable();
     DialogUtils::information(
         this,
-        QStringLiteral("Windows Hello"),
-        QStringLiteral("Convenience unlock disabled."));
+        QStringLiteral("Quick Unlock"),
+        QStringLiteral("Quick Unlock disabled."));
 }
 
 void MainWindow::onScanSecrets() {

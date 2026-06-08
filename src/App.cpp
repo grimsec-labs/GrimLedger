@@ -85,7 +85,7 @@ void App::onHelloUnlockRequested() {
         CryptoManager::secureZero(key);
         if (m_login) {
             m_login->showError(
-                QStringLiteral("Stored Hello unlock is no longer valid. Use your master password."));
+                QStringLiteral("Stored Quick Unlock is no longer valid. Use your master password."));
         }
         return;
     }
