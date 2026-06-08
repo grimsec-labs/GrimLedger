@@ -1,0 +1,9 @@
+-rootPath
+D:/Dev/repos/grimsec_labs/GrimLedger/mobile
+-cmake-output
+-output-file
+D:/Dev/repos/grimsec_labs/GrimLedger/build-android-fresh/mobile/.qt/qml_imports/GrimLedgerMobile_conf.cmake
+-importPath
+D:/Dev/repos/grimsec_labs/GrimLedger/build-android-fresh/mobile
+-importPath
+C:/Qt/6.11.1/android_arm64_v8a/qml
