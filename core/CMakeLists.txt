@@ -50,7 +50,6 @@ endif()
 if(ANDROID)
     list(APPEND GRIMLEDGER_CORE_SOURCES
         ${CMAKE_SOURCE_DIR}/src/security/AndroidBiometricUnlock.cpp
-        ${CMAKE_SOURCE_DIR}/android/cpp/android_jni_bridge.cpp
     )
 endif()
 
@@ -67,6 +66,7 @@ target_include_directories(grimledger_core PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(grimledger_core PUBLIC
     Qt6::Core
     Qt6::Gui
+    Qt6::Network
     sqlite3_static
     sodium
 )

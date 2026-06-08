@@ -1,0 +1,312 @@
+{
+    "classes": [
+        {
+            "className": "GrimVaultController",
+            "lineNumber": 16,
+            "methods": [
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "name": "password",
+                            "type": "QString"
+                        }
+                    ],
+                    "index": 4,
+                    "lineNumber": 33,
+                    "name": "unlock",
+                    "returnType": "bool"
+                },
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "name": "password",
+                            "type": "QString"
+                        }
+                    ],
+                    "index": 5,
+                    "lineNumber": 34,
+                    "name": "createVault",
+                    "returnType": "bool"
+                },
+                {
+                    "access": "public",
+                    "index": 6,
+                    "lineNumber": 35,
+                    "name": "lock",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "index": 7,
+                    "lineNumber": 36,
+                    "name": "biometricUnlock",
+                    "returnType": "bool"
+                },
+                {
+                    "access": "public",
+                    "index": 8,
+                    "isConst": true,
+                    "lineNumber": 37,
+                    "name": "biometricSupported",
+                    "returnType": "bool"
+                },
+                {
+                    "access": "public",
+                    "index": 9,
+                    "isConst": true,
+                    "lineNumber": 38,
+                    "name": "biometricConfigured",
+                    "returnType": "bool"
+                },
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "name": "password",
+                            "type": "QString"
+                        }
+                    ],
+                    "index": 10,
+                    "lineNumber": 39,
+                    "name": "enableBiometric",
+                    "returnType": "bool"
+                },
+                {
+                    "access": "public",
+                    "index": 11,
+                    "lineNumber": 40,
+                    "name": "disableBiometric",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "index": 12,
+                    "isConst": true,
+                    "lineNumber": 42,
+                    "name": "noteSummaries",
+                    "returnType": "QVariantList"
+                },
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "name": "noteId",
+                            "type": "qint64"
+                        }
+                    ],
+                    "index": 13,
+                    "isConst": true,
+                    "lineNumber": 43,
+                    "name": "noteBody",
+                    "returnType": "QString"
+                },
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "name": "noteId",
+                            "type": "qint64"
+                        },
+                        {
+                            "name": "title",
+                            "type": "QString"
+                        },
+                        {
+                            "name": "body",
+                            "type": "QString"
+                        }
+                    ],
+                    "index": 14,
+                    "lineNumber": 44,
+                    "name": "saveNote",
+                    "returnType": "bool"
+                },
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "name": "title",
+                            "type": "QString"
+                        }
+                    ],
+                    "index": 15,
+                    "lineNumber": 45,
+                    "name": "createNote",
+                    "returnType": "qint64"
+                },
+                {
+                    "access": "public",
+                    "index": 16,
+                    "isConst": true,
+                    "lineNumber": 47,
+                    "name": "credentialSummaries",
+                    "returnType": "QVariantList"
+                },
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "name": "id",
+                            "type": "qint64"
+                        }
+                    ],
+                    "index": 17,
+                    "isConst": true,
+                    "lineNumber": 48,
+                    "name": "credentialPassword",
+                    "returnType": "QString"
+                },
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "name": "lineNumbers",
+                            "type": "bool"
+                        },
+                        {
+                            "name": "wordWrap",
+                            "type": "bool"
+                        },
+                        {
+                            "name": "autoLock",
+                            "type": "bool"
+                        },
+                        {
+                            "name": "autoLockMin",
+                            "type": "int"
+                        }
+                    ],
+                    "index": 18,
+                    "lineNumber": 50,
+                    "name": "saveSettings",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "index": 19,
+                    "lineNumber": 51,
+                    "name": "resetSettings",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "index": 20,
+                    "isConst": true,
+                    "lineNumber": 52,
+                    "name": "lineNumbers",
+                    "returnType": "bool"
+                },
+                {
+                    "access": "public",
+                    "index": 21,
+                    "isConst": true,
+                    "lineNumber": 53,
+                    "name": "wordWrap",
+                    "returnType": "bool"
+                }
+            ],
+            "object": true,
+            "properties": [
+                {
+                    "constant": false,
+                    "designable": true,
+                    "final": false,
+                    "index": 0,
+                    "lineNumber": 18,
+                    "name": "unlocked",
+                    "notify": "unlockedChanged",
+                    "override": false,
+                    "read": "isUnlocked",
+                    "required": false,
+                    "scriptable": true,
+                    "stored": true,
+                    "type": "bool",
+                    "user": false,
+                    "virtual": false
+                },
+                {
+                    "constant": false,
+                    "designable": true,
+                    "final": false,
+                    "index": 1,
+                    "lineNumber": 19,
+                    "name": "vaultExists",
+                    "notify": "vaultExistsChanged",
+                    "override": false,
+                    "read": "vaultExists",
+                    "required": false,
+                    "scriptable": true,
+                    "stored": true,
+                    "type": "bool",
+                    "user": false,
+                    "virtual": false
+                },
+                {
+                    "constant": false,
+                    "designable": true,
+                    "final": false,
+                    "index": 2,
+                    "lineNumber": 20,
+                    "name": "accentColor",
+                    "notify": "accentColorChanged",
+                    "override": false,
+                    "read": "accentColor",
+                    "required": false,
+                    "scriptable": true,
+                    "stored": true,
+                    "type": "QString",
+                    "user": false,
+                    "virtual": false,
+                    "write": "setAccentColor"
+                }
+            ],
+            "qualifiedClassName": "GrimVaultController",
+            "signals": [
+                {
+                    "access": "public",
+                    "index": 0,
+                    "lineNumber": 56,
+                    "name": "unlockedChanged",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "index": 1,
+                    "lineNumber": 57,
+                    "name": "vaultExistsChanged",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "index": 2,
+                    "lineNumber": 58,
+                    "name": "accentColorChanged",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "name": "message",
+                            "type": "QString"
+                        }
+                    ],
+                    "index": 3,
+                    "lineNumber": 59,
+                    "name": "errorOccurred",
+                    "returnType": "void"
+                }
+            ],
+            "superClasses": [
+                {
+                    "access": "public",
+                    "name": "QObject"
+                }
+            ]
+        }
+    ],
+    "inputFile": "GrimVaultController.h",
+    "outputRevision": 69
+}

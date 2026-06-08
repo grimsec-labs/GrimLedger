@@ -8,7 +8,7 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
 if(ANDROID)
-    find_package(Qt6 REQUIRED COMPONENTS Core Gui Qml Quick)
+    find_package(Qt6 REQUIRED COMPONENTS Core Gui Qml Quick Network)
 else()
     find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Network)
 endif()

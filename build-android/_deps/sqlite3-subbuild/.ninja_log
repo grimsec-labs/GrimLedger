@@ -1,0 +1,21 @@
+# ninja log v6
+1	66	8026255891397819	sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-mkdir	ca3055fa05440764
+2612	2680	8026255917522428	sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-build	656bc7cc29d7f468
+1	66	8026255891397819	D:/Dev/repos/GrimLedger/build-android/_deps/sqlite3-subbuild/sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-mkdir	ca3055fa05440764
+66	2413	8026255914858892	sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-download	278f6b4b1559e81e
+66	2413	8026255914858892	D:/Dev/repos/GrimLedger/build-android/_deps/sqlite3-subbuild/sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-download	278f6b4b1559e81e
+2552	2612	8026255916857453	sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-configure	afc490b648a99293
+2413	2490	8026255915621945	sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-update	29dc930a6a652d8a
+2413	2490	8026255915621945	D:/Dev/repos/GrimLedger/build-android/_deps/sqlite3-subbuild/sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-update	29dc930a6a652d8a
+2490	2552	8026255916252536	sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-patch	8ca79afde169c03f
+2490	2552	8026255916252536	D:/Dev/repos/GrimLedger/build-android/_deps/sqlite3-subbuild/sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-patch	8ca79afde169c03f
+2552	2612	8026255916857453	D:/Dev/repos/GrimLedger/build-android/_deps/sqlite3-subbuild/sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-configure	afc490b648a99293
+2612	2680	8026255917522428	D:/Dev/repos/GrimLedger/build-android/_deps/sqlite3-subbuild/sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-build	656bc7cc29d7f468
+2681	2756	8026255918273813	sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-install	ccea06898002e8da
+2846	2967	8026255920372719	sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-done	8f4b9a2ef2a3d456
+2681	2756	8026255918273813	D:/Dev/repos/GrimLedger/build-android/_deps/sqlite3-subbuild/sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-install	ccea06898002e8da
+2756	2846	8026255919152401	sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-test	1d22647f69139d77
+2756	2846	8026255919152401	D:/Dev/repos/GrimLedger/build-android/_deps/sqlite3-subbuild/sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-test	1d22647f69139d77
+2846	2967	8026255920372719	CMakeFiles/sqlite3-populate-complete	8f4b9a2ef2a3d456
+2846	2967	8026255920372719	D:/Dev/repos/GrimLedger/build-android/_deps/sqlite3-subbuild/CMakeFiles/sqlite3-populate-complete	8f4b9a2ef2a3d456
+2846	2967	8026255920372719	D:/Dev/repos/GrimLedger/build-android/_deps/sqlite3-subbuild/sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-done	8f4b9a2ef2a3d456

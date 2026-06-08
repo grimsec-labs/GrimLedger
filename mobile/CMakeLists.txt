@@ -2,6 +2,7 @@ qt_add_executable(GrimLedgerMobile
     main.cpp
     GrimVaultController.cpp
     GrimVaultController.h
+    ${CMAKE_SOURCE_DIR}/android/cpp/android_jni_bridge.cpp
     mobile.qrc
 )
 

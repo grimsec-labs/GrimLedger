@@ -20,7 +20,6 @@ QString lastError() { return QStringLiteral("Android biometric unlock is only av
 
 #include <QJniObject>
 #include <QJniEnvironment>
-#include <QtCore/qnativeinterface.h>
 
 namespace AndroidBiometricUnlock {
 
@@ -29,7 +28,10 @@ namespace {
 QString g_lastError;
 
 jobject androidContext() {
-    return QNativeInterface::QAndroidApplication::context();
+    return QJniObject::callStaticObjectMethod(
+        "org/qtproject/qt/android/QtNative",
+        "activity",
+        "()Landroid/app/Activity;").object();
 }
 
 } // namespace

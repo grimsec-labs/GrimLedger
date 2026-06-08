@@ -22,6 +22,6 @@ qint64 TimeUtils::toUnix(const QDateTime& dt) {
     return dt.toSecsSinceEpoch();
 }
 
-QDateTime TimeUtils::fromUnix(qint64 unix) {
-    return QDateTime::fromSecsSinceEpoch(unix);
+QDateTime TimeUtils::fromUnix(qint64 epochSeconds) {
+    return QDateTime::fromSecsSinceEpoch(epochSeconds);
 }

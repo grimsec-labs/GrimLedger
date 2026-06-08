@@ -1,7 +1,7 @@
-#include "mobile/GrimVaultController.h"
+#include "GrimVaultController.h"
 
 #if defined(Q_OS_ANDROID)
-#include "android/cpp/android_jni_bridge.h"
+#include "android_jni_bridge.h"
 #endif
 #include "bridge/OriginMatcher.h"
 #include "security/CryptoManager.h"
@@ -74,7 +74,7 @@ bool GrimVaultController::createVault(const QString& password) {
 }
 
 void GrimVaultController::lock() {
-    m_session.clearKey();
+    m_session.lock();
     emit unlockedChanged();
 }
 
@@ -233,8 +233,8 @@ void GrimVaultController::saveSettings(bool lineNumbers, bool wordWrap, bool aut
 
 void GrimVaultController::resetSettings() {
     AppSettings::resetToDefaults();
-    saveAccent(QStringLiteral(kDefaultAccent));
-    m_accent = QStringLiteral(kDefaultAccent);
+    saveAccent(QString::fromLatin1(kDefaultAccent));
+    m_accent = QString::fromLatin1(kDefaultAccent);
     emit accentColorChanged();
 }
 

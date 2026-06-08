@@ -1,4 +1,4 @@
-#include "mobile/GrimVaultController.h"
+#include "GrimVaultController.h"
 
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
