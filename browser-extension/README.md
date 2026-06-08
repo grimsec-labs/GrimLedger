@@ -4,6 +4,15 @@ Connects Chrome/Edge to the unlocked GrimLedger desktop app via native messaging
 
 ## Setup
 
+### Option A — Windows Setup.exe (recommended)
+
+1. Build: `.\installer\build-installer.ps1` from repo root (requires Inno Setup 6).
+2. Run `dist\GrimLedger-Setup.exe` and follow the wizard.
+3. Load unpacked extension from the folder the installer opens.
+4. In GrimLedger **Settings**, enable **browser bridge** and click **Save Settings**.
+
+### Option B — Developer / manual
+
 1. Build GrimLedger (`grimledger_host.exe` next to `GrimLedger.exe` — e.g. `build/` on MinGW or `build/Release/` on MSVC).
 2. In Chrome, open `chrome://extensions`, enable **Developer mode**, **Load unpacked** → select this `browser-extension` folder.
 3. Copy the extension ID from the extensions page.
@@ -13,7 +22,7 @@ Connects Chrome/Edge to the unlocked GrimLedger desktop app via native messaging
 .\native-host\install-windows.ps1 -ExtensionId YOUR_EXTENSION_ID_HERE
 ```
 
-5. In GrimLedger **Settings → Security**, enable **browser bridge** (disabled by default).
+5. In GrimLedger **Settings → Save Settings** after enabling **browser bridge** (disabled by default).
 6. Unlock GrimLedger and keep it running. The bridge restarts after each unlock.
 7. Add vault keys with an exact **URL** origin (scheme + host + port). Enable **Allow subdomains** only when needed.
 8. On a login page, open the GrimLedger extension popup and click a match to fill.

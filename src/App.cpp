@@ -7,7 +7,7 @@
 #include "security/CryptoManager.h"
 #include "utils/DialogUtils.h"
 #include "utils/AppSettings.h"
-#include "security/WindowsHelloUnlock.h"
+#include "security/PlatformBiometricUnlock.h"
 
 #include <QFile>
 
@@ -73,15 +73,15 @@ void App::showMain() {
 
 void App::onHelloUnlockRequested() {
     QByteArray key;
-    if (!WindowsHelloUnlock::tryUnlock(key)) {
+    if (!PlatformBiometricUnlock::tryUnlock(key)) {
         if (m_login) {
-            m_login->showError(WindowsHelloUnlock::lastError());
+            m_login->showError(PlatformBiometricUnlock::lastError());
         }
         return;
     }
 
     if (!m_vault->unlockWithDerivedKey(key)) {
-        WindowsHelloUnlock::disable();
+        PlatformBiometricUnlock::disable();
         CryptoManager::secureZero(key);
         if (m_login) {
             m_login->showError(

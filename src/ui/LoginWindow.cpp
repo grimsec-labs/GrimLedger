@@ -2,7 +2,7 @@
 #include "ui/CustomTitleBar.h"
 #include "ui/FramelessResize.h"
 #include "security/PasswordManager.h"
-#include "security/WindowsHelloUnlock.h"
+#include "security/PlatformBiometricUnlock.h"
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -160,7 +160,7 @@ void LoginWindow::setVaultExists(bool exists) {
         m_modeButton->setText(QStringLiteral("Create New Vault"));
         m_modeButton->show();
         m_helloButton->setVisible(
-            WindowsHelloUnlock::isPlatformSupported() && WindowsHelloUnlock::isConfigured());
+            PlatformBiometricUnlock::isPlatformSupported() && PlatformBiometricUnlock::isConfigured());
     }
 }
 

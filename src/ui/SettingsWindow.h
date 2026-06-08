@@ -28,8 +28,10 @@ public:
     bool browserBridgeEnabled() const;
     void setBrowserBridgeEnabled(bool enabled);
     void setVaultHealthReport(const VaultHealthReport& report);
+    void reloadFromStorage();
 
 signals:
+    void accentPreviewChanged(const QString& hex);
     void accentChanged(const QString& hex);
     void lineNumbersChanged(bool enabled);
     void wordWrapChanged(bool enabled);
@@ -62,6 +64,12 @@ signals:
 
 private:
     void buildUi();
+    void loadFromStorage();
+    void persistSettings();
+    void applySettingsToApp();
+    void saveSettings();
+    void resetSettings();
+    void setStatusMessage(const QString& text);
     void updateHealthLabels();
 
     QComboBox* m_accentCombo = nullptr;
@@ -83,5 +91,6 @@ private:
     QLabel* m_integrityLabel = nullptr;
     QLabel* m_bridgeHealthLabel = nullptr;
     QLabel* m_backupAgeLabel = nullptr;
+    QLabel* m_statusLabel = nullptr;
     VaultHealthReport m_health;
 };

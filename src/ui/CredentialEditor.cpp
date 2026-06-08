@@ -10,6 +10,9 @@
 #include <QPushButton>
 #include <QLabel>
 #include <QComboBox>
+#include <QScrollArea>
+#include <QFrame>
+#include <QSizePolicy>
 #include <QTimer>
 
 CredentialEditor::CredentialEditor(QWidget* parent)
@@ -19,8 +22,21 @@ CredentialEditor::CredentialEditor(QWidget* parent)
 
 void CredentialEditor::buildUi() {
     setObjectName(QStringLiteral("CredentialEditor"));
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 
-    auto* root = new QVBoxLayout(this);
+    auto* outer = new QVBoxLayout(this);
+    outer->setContentsMargins(0, 0, 0, 0);
+    outer->setSpacing(0);
+
+    auto* scroll = new QScrollArea(this);
+    scroll->setObjectName(QStringLiteral("CredentialScroll"));
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+
+    auto* content = new QWidget(scroll);
+    content->setObjectName(QStringLiteral("CredentialScrollContent"));
+    auto* root = new QVBoxLayout(content);
     root->setContentsMargins(24, 24, 24, 24);
     root->setSpacing(12);
 
@@ -148,6 +164,9 @@ void CredentialEditor::buildUi() {
     root->addLayout(btnRow);
     root->addWidget(m_statusLabel);
     root->addStretch();
+
+    scroll->setWidget(content);
+    outer->addWidget(scroll);
 }
 
 QString CredentialEditor::label() const { return m_labelEdit->text().trimmed(); }

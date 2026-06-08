@@ -1,0 +1,18 @@
+Browser bridge — next steps
+===========================
+
+1. Open Chrome or Edge and go to:  chrome://extensions
+
+2. Turn on Developer mode.
+
+3. Click "Load unpacked" and select:
+   %LOCALAPPDATA%\GrimLedger\browser-extension
+
+4. In GrimLedger: open Settings, enable "browser bridge", click Save Settings.
+
+5. Unlock GrimLedger and keep it running while using the extension.
+
+If you skipped the extension ID during setup, run install-windows.ps1 from the app folder:
+   %LOCALAPPDATA%\GrimLedger\app\native-host\install-windows.ps1
+
+Vault data is stored separately (not removed by uninstall unless you delete it manually).

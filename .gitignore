@@ -1,5 +1,6 @@
 build/
 cmake-build-*/
+dist/
 .vs/
 .vscode/
 *.user

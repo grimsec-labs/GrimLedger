@@ -2,6 +2,8 @@
 
 **GrimLedger** is a local-first, password-protected encrypted Markdown note manager with a dark infernal / hacker aesthetic. It is designed for programmers, cybersecurity students, and power users who want to store Markdown notes, code snippets, terminal commands, and research behind a single master password.
 
+Homepage: [github.com/grimsec-labs/GrimLedger](https://github.com/grimsec-labs/GrimLedger)
+
 No cloud accounts. No online sync. Your vault stays on your machine.
 
 ---
@@ -16,6 +18,8 @@ No cloud accounts. No online sync. Your vault stays on your machine.
 - Folders, tags, favorites, and recent notes
 - Encrypted credential vault with browser bridge (opt-in, disabled by default)
 - Import/export Markdown files with honest bulk-export reporting
+- In-note image attachments with automatic metadata purging (EXIF stripped, re-sealed as PNG)
+- Encrypted image storage in the vault (per-attachment AEAD, `grim://attachment/` URLs)
 - Encrypted backup and archive export
 - Auto-lock after inactivity + manual lock
 - Change master password
@@ -110,6 +114,18 @@ cmake --build build
 ./build/GrimLedger
 ```
 
+### Windows installer (Setup.exe)
+
+Build a per-user installer with the desktop app, Qt runtime, and browser extension bundle:
+
+```powershell
+# Requires Qt windeployqt + Inno Setup 6
+.\installer\build-installer.ps1
+# → dist\GrimLedger-Setup.exe
+```
+
+See [installer/README.md](installer/README.md) for details.
+
 ### Run tests
 
 ```bash
@@ -127,6 +143,16 @@ cmake --build build
 
 ./build/GrimLedger.app/Contents/MacOS/GrimLedger
 ```
+
+### Android
+
+Qt Quick mobile build (shared `grimledger_core` library). See [docs/ANDROID.md](docs/ANDROID.md).
+
+```powershell
+.\installer\build-android.ps1
+```
+
+Output: `dist\android\`
 
 ---
 
@@ -170,26 +196,62 @@ After 15 minutes of inactivity (configurable in Settings), the vault auto-locks.
 
 ---
 
+## Image Attachments
+
+GrimLedger embeds images in Markdown notes. Every inserted image is sanitized for privacy, then encrypted at rest like note titles and bodies.
+
+### Metadata purging
+
+When you insert an image (editor toolbar or **Insert Image**), GrimLedger:
+
+1. Decodes the source file (PNG, JPEG, BMP, WebP, GIF — up to 15 MB input).
+2. Strips embedded metadata (EXIF, GPS, camera info, etc.) by decoding pixels and re-encoding without sidecar data.
+3. Re-seals the result as **PNG** (max 8192×8192 pixels, 10 MB output cap).
+
+The file picker reflects this workflow: *metadata purged · re-sealed as PNG · encrypted in vault*.
+
+Implementation: `ImageSanitizer` decodes via Qt, normalizes to RGB/RGBA, and writes a fresh PNG — no EXIF or other metadata survives.
+
+### Encrypted storage
+
+Sanitized PNG bytes are encrypted with **XChaCha20-Poly1305 AEAD** (`crypto_aead_xchacha20poly1305_ietf`), the same scheme used for note fields. Each attachment receives a unique UUID; the ciphertext is bound to that attachment id in associated data, which prevents undetected swapping between attachments or notes.
+
+- Stored in the `note_attachments` SQLite table as encrypted BLOBs only.
+- Referenced in note bodies as `![alt text](grim://attachment/<uuid>)`.
+- Preview decrypts on demand while the vault is unlocked; decrypted image data is cached only for the current session.
+- Included in **GRIMBKUP2** encrypted backups with the rest of the vault.
+
+Aggregate attachment limit: 100 MB plaintext per vault.
+
+---
+
 ## Project Structure
 
 ```
 GrimLedger/
   CMakeLists.txt
   README.md
+  core/          — Portable crypto + storage (grimledger_core static library)
+  mobile/        — Qt Quick UI + GrimVaultController (Android)
+  android/       — Manifest, Kotlin autofill/biometric, JNI bridge
   src/
     main.cpp, App.cpp
     ui/          — Qt widgets (login, main window, editor, preview, settings)
-    security/    — CryptoManager, PasswordManager, VaultSession
-    storage/     — Database, NoteRepository, CredentialRepository, VaultRepository
+    security/    — CryptoManager, PasswordManager, VaultSession, PlatformBiometricUnlock
+    storage/     — Database, NoteRepository, AttachmentRepository, CredentialRepository, VaultRepository
     bridge/      — CredentialBridgeServer, BridgeFillCoordinator, BridgeAuth
     browser-extension/ — Chrome/Edge fill helper (native messaging)
     tests/       — Security regression tests (run via `ctest`)
     models/      — Note, Folder, Tag
     search/      — SearchEngine
     markdown/    — MarkdownRenderer, SyntaxHighlighter
-    utils/       — TimeUtils, SecureStringUtils
+    utils/       — TimeUtils, SecureStringUtils, ImageSanitizer
   resources/
     styles/grimledger_dark.qss
+  docs/
+    ANDROID.md, GITHUB_MIGRATION.md
+  installer/
+    build-android.ps1, build-release.ps1, grimledger.iss
 ```
 
 ---

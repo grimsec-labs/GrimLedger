@@ -1,0 +1,13 @@
+﻿[ 55%] Built target sodium
+[ 56%] Built target sqlite3_static
+[ 57%] Building CXX object core/CMakeFiles/grimledger_core.dir/__/src/security/CryptoManager.cpp.obj
+cmake : mingw32-make.exe[2]: *** [core\CMakeFiles\grimledger_core.dir\build.make:87: 
+core/CMakeFiles/grimledger_core.dir/__/src/security/CryptoManager.cpp.obj] Error 1
+At C:\Users\sebbe\AppData\Local\Temp\ps-script-b945c79c-4f3d-4f83-86dd-33f06341dc0f.ps1:103 char:31
++ ... \repos\GrimLedger"; cmake --build build --config Release 2>&1 | Out-F ...
++                         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (mingw32-make.ex...pp.obj] Error 1:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+mingw32-make.exe[1]: *** [CMakeFiles\Makefile2:647: core/CMakeFiles/grimledger_core.dir/all] Error 2
+mingw32-make.exe: *** [Makefile:145: all] Error 2

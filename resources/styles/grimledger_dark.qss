@@ -428,6 +428,13 @@ QToolButton {
     background-color: #0a0a0c;
 }
 
+#SettingsScroll, #SettingsScrollContent,
+#CredentialScroll, #CredentialScrollContent,
+#SettingsFooter {
+    background-color: #0a0a0c;
+    border: none;
+}
+
 #SettingsTitle {
     font-size: 20px;
     color: @@ACCENT@@;

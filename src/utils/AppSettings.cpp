@@ -102,3 +102,41 @@ void AppSettings::setSemanticSearchEnabled(bool enabled) {
     QSettings settings;
     settings.setValue(QStringLiteral("search/semanticSearchEnabled"), enabled);
 }
+
+bool AppSettings::lineNumbersEnabled() {
+    QSettings settings;
+    return settings.value(QStringLiteral("appearance/lineNumbers"), false).toBool();
+}
+
+void AppSettings::setLineNumbersEnabled(bool enabled) {
+    QSettings settings;
+    settings.setValue(QStringLiteral("appearance/lineNumbers"), enabled);
+}
+
+bool AppSettings::wordWrapEnabled() {
+    QSettings settings;
+    return settings.value(QStringLiteral("appearance/wordWrap"), true).toBool();
+}
+
+void AppSettings::setWordWrapEnabled(bool enabled) {
+    QSettings settings;
+    settings.setValue(QStringLiteral("appearance/wordWrap"), enabled);
+}
+
+void AppSettings::resetToDefaults() {
+    setLineNumbersEnabled(false);
+    setWordWrapEnabled(true);
+    setAutoLockEnabled(true);
+    setAutoLockMinutes(15);
+    setBrowserBridgeEnabled(false);
+    setHibpCheckEnabled(false);
+    setSelfDestructEnabled(false);
+    setWebClipperEnabled(false);
+    setSemanticSearchEnabled(false);
+    sync();
+}
+
+void AppSettings::sync() {
+    QSettings settings;
+    settings.sync();
+}

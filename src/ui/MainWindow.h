@@ -121,7 +121,9 @@ private:
     void loadCredentials();
     void loadCredential(qint64 id);
     bool saveCurrentCredential(bool showErrorDialog = true);
-    void applyAccent(const QString& hex);
+    void applyAccent(const QString& hex, bool persist = true);
+    void applyPersistedSettings();
+    void onAccentPreviewChanged(const QString& hex);
     void updateStatusBar();
     void updatePreview();
     MarkdownRenderer::ImageUrlResolver imageResolver() const;
@@ -152,6 +154,7 @@ protected:
     NoteList* m_noteList = nullptr;
     CredentialList* m_credList = nullptr;
     QStackedWidget* m_contentStack = nullptr;
+    QStackedWidget* m_rightStack = nullptr;
     NoteEditor* m_editor = nullptr;
     MarkdownPreview* m_preview = nullptr;
     QWidget* m_credPanel = nullptr;

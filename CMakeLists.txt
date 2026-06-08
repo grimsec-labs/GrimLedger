@@ -7,9 +7,13 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Network)
+if(ANDROID)
+    find_package(Qt6 REQUIRED COMPONENTS Core Gui Qml Quick)
+else()
+    find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Network)
+endif()
 
-# --- libsodium (Argon2id + XChaCha20-Poly1305) ---
+# --- libsodium ---
 include(FetchContent)
 FetchContent_Declare(
     libsodium
@@ -23,10 +27,7 @@ if(NOT libsodium_POPULATED)
 endif()
 
 set(SODIUM_SRC_ROOT ${libsodium_SOURCE_DIR}/src/libsodium)
-file(GLOB_RECURSE SODIUM_SOURCES CONFIGURE_DEPENDS
-    "${SODIUM_SRC_ROOT}/*.c"
-)
-
+file(GLOB_RECURSE SODIUM_SOURCES CONFIGURE_DEPENDS "${SODIUM_SRC_ROOT}/*.c")
 configure_file(
     "${libsodium_SOURCE_DIR}/builds/msvc/version.h"
     "${SODIUM_SRC_ROOT}/include/sodium/version.h"
@@ -45,7 +46,7 @@ if(MSVC)
     target_compile_definitions(sodium PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
 
-# --- SQLite amalgamation ---
+# --- SQLite ---
 FetchContent_Declare(
     sqlite3
     URL https://www.sqlite.org/2024/sqlite-amalgamation-3460100.zip
@@ -60,234 +61,138 @@ if(MSVC)
     target_compile_definitions(sqlite3_static PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
 
-set(SOURCES
-    src/main.cpp
-    src/App.cpp
-    src/ui/LoginWindow.cpp
-    src/ui/MainWindow.cpp
-    src/ui/Sidebar.cpp
-    src/ui/NoteList.cpp
-    src/ui/NoteEditor.cpp
-    src/ui/CredentialList.cpp
-    src/ui/CredentialEditor.cpp
-    src/ui/MarkdownPreview.cpp
-    src/ui/SettingsWindow.cpp
-    src/models/FillTrustLevel.cpp
-    src/utils/TotpGenerator.cpp
-    src/utils/VaultHealth.cpp
-    src/import/CredentialImport.cpp
-    src/security/BreachCheck.cpp
-    src/security/WindowsHelloUnlock.cpp
-    src/models/ChamberId.cpp
-    src/security/ChamberManager.cpp
-    src/security/SecurityChronicle.cpp
-    src/security/SecretScanner.cpp
-    src/security/RedactionStudio.cpp
-    src/storage/SealedBlockRepository.cpp
-    src/share/GrimShare.cpp
-    src/markdown/DiagramRenderer.cpp
-    src/search/SemanticSearch.cpp
-    src/graph/KnowledgeGraph.cpp
-    src/runbook/RunbookParser.cpp
-    src/runbook/RunbookSessionRepository.cpp
-    src/bridge/BridgeClipCoordinator.cpp
-    src/ui/CustomTitleBar.cpp
-    src/ui/FramelessResize.cpp
-    src/ui/FolderPickerDialog.cpp
-    src/ui/GrimDialog.cpp
-    src/ui/GrimMessageDialog.cpp
-    src/ui/GrimInputDialog.cpp
-    src/ui/GrimFileDialog.cpp
-    src/security/CryptoManager.cpp
-    src/security/PasswordManager.cpp
-    src/security/VaultSession.cpp
-    src/storage/Database.cpp
-    src/storage/DbTransaction.cpp
-    src/storage/NoteRepository.cpp
-    src/storage/CredentialRepository.cpp
-    src/storage/AttachmentRepository.cpp
-    src/storage/VaultRepository.cpp
-    src/search/SearchEngine.cpp
-    src/utils/TimeUtils.cpp
-    src/utils/SecureStringUtils.cpp
-    src/utils/Theme.cpp
-    src/utils/ImageSanitizer.cpp
-    src/utils/PasswordGenerator.cpp
-    src/utils/ClipboardUtils.cpp
-    src/utils/AppSettings.cpp
-    src/utils/DialogUtils.cpp
-    src/bridge/OriginMatcher.cpp
-    src/bridge/BridgeAuth.cpp
-    src/bridge/CredentialBridgeServer.cpp
-    src/bridge/BridgeFillCoordinator.cpp
-    src/utils/SqliteUtils.cpp
-    src/markdown/MarkdownRenderer.cpp
-    src/markdown/SyntaxHighlighter.cpp
-)
+add_subdirectory(core)
 
-set(HEADERS
-    src/App.h
-    src/ui/LoginWindow.h
-    src/ui/MainWindow.h
-    src/ui/Sidebar.h
-    src/ui/NoteList.h
-    src/ui/NoteEditor.h
-    src/ui/CredentialList.h
-    src/ui/CredentialEditor.h
-    src/ui/MarkdownPreview.h
-    src/ui/SettingsWindow.h
-    src/ui/CustomTitleBar.h
-    src/ui/FramelessResize.h
-    src/ui/FolderPickerDialog.h
-    src/ui/GrimDialog.h
-    src/ui/GrimMessageDialog.h
-    src/ui/GrimInputDialog.h
-    src/ui/GrimFileDialog.h
-    src/security/CryptoManager.h
-    src/security/PasswordManager.h
-    src/security/VaultSession.h
-    src/storage/Database.h
-    src/storage/DbTransaction.h
-    src/storage/NoteRepository.h
-    src/storage/CredentialRepository.h
-    src/storage/AttachmentRepository.h
-    src/storage/VaultRepository.h
-    src/models/Note.h
-    src/models/Credential.h
-    src/models/FillTrustLevel.h
-    src/import/CredentialImport.h
-    src/utils/TotpGenerator.h
-    src/utils/VaultHealth.h
-    src/security/BreachCheck.h
-    src/security/WindowsHelloUnlock.h
-    src/models/Folder.h
-    src/models/Tag.h
-    src/search/SearchEngine.h
-    src/utils/TimeUtils.h
-    src/utils/SecureStringUtils.h
-    src/utils/Theme.h
-    src/utils/ImageSanitizer.h
-    src/utils/PasswordGenerator.h
-    src/utils/ClipboardUtils.h
-    src/utils/AppSettings.h
-    src/utils/DialogUtils.h
-    src/bridge/OriginMatcher.h
-    src/bridge/BridgeAuth.h
-    src/bridge/CredentialBridgeServer.h
-    src/bridge/BridgeFillCoordinator.h
-    src/models/CredentialSummary.h
-    src/utils/RepositoryResult.h
-    src/utils/SqliteUtils.h
-    src/markdown/MarkdownRenderer.h
-    src/markdown/SyntaxHighlighter.h
-)
+if(ANDROID)
+    add_subdirectory(mobile)
+else()
+    set(DESKTOP_SOURCES
+        src/main.cpp
+        src/App.cpp
+        src/ui/LoginWindow.cpp
+        src/ui/MainWindow.cpp
+        src/ui/Sidebar.cpp
+        src/ui/NoteList.cpp
+        src/ui/NoteEditor.cpp
+        src/ui/CredentialList.cpp
+        src/ui/CredentialEditor.cpp
+        src/ui/MarkdownPreview.cpp
+        src/ui/SettingsWindow.cpp
+        src/ui/CustomTitleBar.cpp
+        src/ui/FramelessResize.cpp
+        src/ui/FolderPickerDialog.cpp
+        src/ui/GrimDialog.cpp
+        src/ui/GrimMessageDialog.cpp
+        src/ui/GrimInputDialog.cpp
+        src/ui/GrimFileDialog.cpp
+        src/bridge/BridgeClipCoordinator.cpp
+        src/bridge/CredentialBridgeServer.cpp
+        src/bridge/BridgeFillCoordinator.cpp
+        src/utils/Theme.cpp
+        src/utils/ClipboardUtils.cpp
+        src/utils/DialogUtils.cpp
+    )
 
-set(GRIMLEDGER_RESOURCES
-    resources/resources.qrc
-)
-if(WIN32)
-    list(APPEND GRIMLEDGER_RESOURCES resources/grimledger.rc)
-endif()
+    set(DESKTOP_HEADERS
+        src/App.h
+        src/ui/LoginWindow.h
+        src/ui/MainWindow.h
+        src/ui/Sidebar.h
+        src/ui/NoteList.h
+        src/ui/NoteEditor.h
+        src/ui/CredentialList.h
+        src/ui/CredentialEditor.h
+        src/ui/MarkdownPreview.h
+        src/ui/SettingsWindow.h
+        src/ui/CustomTitleBar.h
+        src/ui/FramelessResize.h
+        src/ui/FolderPickerDialog.h
+        src/ui/GrimDialog.h
+        src/ui/GrimMessageDialog.h
+        src/ui/GrimInputDialog.h
+        src/ui/GrimFileDialog.h
+        src/bridge/BridgeClipCoordinator.h
+        src/bridge/CredentialBridgeServer.h
+        src/bridge/BridgeFillCoordinator.h
+        src/utils/Theme.h
+        src/utils/ClipboardUtils.h
+        src/utils/DialogUtils.h
+    )
 
-qt_add_executable(GrimLedger
-    ${SOURCES}
-    ${HEADERS}
-    ${GRIMLEDGER_RESOURCES}
-)
-
-target_include_directories(GrimLedger PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-)
-
-target_link_libraries(GrimLedger PRIVATE
-    Qt6::Core
-    Qt6::Gui
-    Qt6::Widgets
-    Qt6::Network
-    sqlite3_static
-    sodium
-)
-
-add_executable(grimledger_host
-    tools/grimledger_host/main.cpp
-    src/bridge/BridgeAuth.cpp
-)
-set_target_properties(grimledger_host PROPERTIES AUTOMOC OFF AUTOUIC OFF AUTORCC OFF)
-target_include_directories(grimledger_host PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(grimledger_host PRIVATE Qt6::Core Qt6::Network sodium)
-if(WIN32)
-    set_target_properties(grimledger_host PROPERTIES WIN32_EXECUTABLE FALSE)
-endif()
-
-enable_testing()
-
-set(GRIMLEDGER_STORAGE_TEST_SOURCES
-    src/models/FillTrustLevel.cpp
-    src/storage/Database.cpp
-    src/storage/DbTransaction.cpp
-    src/storage/CredentialRepository.cpp
-    src/storage/NoteRepository.cpp
-    src/storage/AttachmentRepository.cpp
-    src/storage/VaultRepository.cpp
-    src/security/CryptoManager.cpp
-    src/security/PasswordManager.cpp
-    src/utils/SqliteUtils.cpp
-    src/utils/TimeUtils.cpp
-)
-
-function(add_grimledger_test name)
-    add_executable(${name} tests/${name}.cpp)
-    set_target_properties(${name} PROPERTIES AUTOMOC OFF AUTOUIC OFF AUTORCC OFF)
-    target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-    if(${name} STREQUAL "test_origin_matcher")
-        target_sources(${name} PRIVATE src/bridge/OriginMatcher.cpp src/models/FillTrustLevel.cpp)
-        target_link_libraries(${name} PRIVATE Qt6::Core)
-    elseif(${name} STREQUAL "test_sqlite_utils")
-        target_sources(${name} PRIVATE src/utils/SqliteUtils.cpp)
-        target_link_libraries(${name} PRIVATE sqlite3_static)
-    elseif(${name} STREQUAL "test_bridge_auth")
-        target_sources(${name} PRIVATE src/bridge/BridgeAuth.cpp)
-        target_link_libraries(${name} PRIVATE Qt6::Core sodium)
-    elseif(${name} STREQUAL "test_bridge_server")
-        target_sources(${name} PRIVATE src/bridge/BridgeAuth.cpp)
-        target_link_libraries(${name} PRIVATE Qt6::Core sodium)
-    elseif(${name} STREQUAL "test_credential_repository")
-        target_sources(${name} PRIVATE ${GRIMLEDGER_STORAGE_TEST_SOURCES})
-        target_link_libraries(${name} PRIVATE Qt6::Core sqlite3_static sodium)
-    elseif(${name} STREQUAL "test_note_repository")
-        target_sources(${name} PRIVATE ${GRIMLEDGER_STORAGE_TEST_SOURCES})
-        target_link_libraries(${name} PRIVATE Qt6::Core sqlite3_static sodium)
-    elseif(${name} STREQUAL "test_vault_restore")
-        target_sources(${name} PRIVATE ${GRIMLEDGER_STORAGE_TEST_SOURCES})
-        target_link_libraries(${name} PRIVATE Qt6::Core sqlite3_static sodium)
-    elseif(${name} STREQUAL "test_totp_generator")
-        target_sources(${name} PRIVATE src/utils/TotpGenerator.cpp)
-        target_link_libraries(${name} PRIVATE Qt6::Core sodium)
-    elseif(${name} STREQUAL "test_stage_b")
-        target_sources(${name} PRIVATE
-            src/security/SecretScanner.cpp
-            src/share/GrimShare.cpp
-            src/runbook/RunbookParser.cpp
-            src/security/CryptoManager.cpp
-            src/security/PasswordManager.cpp)
-        target_link_libraries(${name} PRIVATE Qt6::Core sodium)
+    set(GRIMLEDGER_RESOURCES resources/resources.qrc)
+    if(WIN32)
+        list(APPEND GRIMLEDGER_RESOURCES resources/grimledger.rc)
     endif()
-    add_test(NAME ${name} COMMAND ${name})
-endfunction()
 
-add_grimledger_test(test_origin_matcher)
-add_grimledger_test(test_sqlite_utils)
-add_grimledger_test(test_bridge_auth)
-add_grimledger_test(test_bridge_server)
-add_grimledger_test(test_credential_repository)
-add_grimledger_test(test_note_repository)
-add_grimledger_test(test_vault_restore)
-add_grimledger_test(test_totp_generator)
-add_grimledger_test(test_stage_b)
+    qt_add_executable(GrimLedger
+        ${DESKTOP_SOURCES}
+        ${DESKTOP_HEADERS}
+        ${GRIMLEDGER_RESOURCES}
+    )
 
-if(WIN32)
-    set_target_properties(GrimLedger PROPERTIES WIN32_EXECUTABLE TRUE)
-    target_link_libraries(GrimLedger PRIVATE crypt32)
+    target_include_directories(GrimLedger PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(GrimLedger PRIVATE
+        grimledger_core
+        Qt6::Core
+        Qt6::Gui
+        Qt6::Widgets
+        Qt6::Network
+    )
+
+    add_executable(grimledger_host
+        tools/grimledger_host/main.cpp
+        src/bridge/BridgeAuth.cpp
+    )
+    set_target_properties(grimledger_host PROPERTIES AUTOMOC OFF AUTOUIC OFF AUTORCC OFF)
+    target_include_directories(grimledger_host PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(grimledger_host PRIVATE Qt6::Core Qt6::Network sodium)
+    if(WIN32)
+        set_target_properties(grimledger_host PROPERTIES WIN32_EXECUTABLE FALSE)
+    endif()
+
+    enable_testing()
+
+    function(add_grimledger_test name)
+        add_executable(${name} tests/${name}.cpp)
+        set_target_properties(${name} PROPERTIES AUTOMOC OFF AUTOUIC OFF AUTORCC OFF)
+        target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+        if(${name} STREQUAL "test_origin_matcher")
+            target_link_libraries(${name} PRIVATE grimledger_core Qt6::Core)
+        elseif(${name} STREQUAL "test_sqlite_utils")
+            target_sources(${name} PRIVATE src/utils/SqliteUtils.cpp)
+            target_link_libraries(${name} PRIVATE sqlite3_static)
+        elseif(${name} STREQUAL "test_bridge_auth")
+            target_link_libraries(${name} PRIVATE grimledger_core Qt6::Core)
+        elseif(${name} STREQUAL "test_bridge_server")
+            target_link_libraries(${name} PRIVATE grimledger_core Qt6::Core)
+        elseif(${name} STREQUAL "test_credential_repository")
+            target_link_libraries(${name} PRIVATE grimledger_core Qt6::Core)
+        elseif(${name} STREQUAL "test_note_repository")
+            target_link_libraries(${name} PRIVATE grimledger_core Qt6::Core)
+        elseif(${name} STREQUAL "test_vault_restore")
+            target_link_libraries(${name} PRIVATE grimledger_core Qt6::Core)
+        elseif(${name} STREQUAL "test_totp_generator")
+            target_link_libraries(${name} PRIVATE grimledger_core Qt6::Core)
+        elseif(${name} STREQUAL "test_stage_b")
+            target_link_libraries(${name} PRIVATE grimledger_core Qt6::Core)
+        endif()
+        add_test(NAME ${name} COMMAND ${name})
+    endfunction()
+
+    add_grimledger_test(test_origin_matcher)
+    add_grimledger_test(test_sqlite_utils)
+    add_grimledger_test(test_bridge_auth)
+    add_grimledger_test(test_bridge_server)
+    add_grimledger_test(test_credential_repository)
+    add_grimledger_test(test_note_repository)
+    add_grimledger_test(test_vault_restore)
+    add_grimledger_test(test_totp_generator)
+    add_grimledger_test(test_stage_b)
+
+    if(WIN32)
+        set_target_properties(GrimLedger PROPERTIES WIN32_EXECUTABLE TRUE)
+        target_link_libraries(GrimLedger PRIVATE crypt32)
+    endif()
+
+    install(TARGETS GrimLedger RUNTIME DESTINATION bin)
 endif()
-
-install(TARGETS GrimLedger RUNTIME DESTINATION bin)

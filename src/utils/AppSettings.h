@@ -32,4 +32,12 @@ public:
 
     static bool semanticSearchEnabled();
     static void setSemanticSearchEnabled(bool enabled);
+
+    static bool lineNumbersEnabled();
+    static void setLineNumbersEnabled(bool enabled);
+    static bool wordWrapEnabled();
+    static void setWordWrapEnabled(bool enabled);
+
+    static void resetToDefaults();
+    static void sync();
 };

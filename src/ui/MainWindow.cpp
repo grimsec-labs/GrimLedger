@@ -30,7 +30,7 @@
 #include "security/CryptoManager.h"
 #include "security/VaultSession.h"
 #include "security/BreachCheck.h"
-#include "security/WindowsHelloUnlock.h"
+#include "security/PlatformBiometricUnlock.h"
 #include "import/CredentialImport.h"
 #include "utils/TotpGenerator.h"
 #include "utils/VaultHealth.h"
@@ -256,8 +256,8 @@ void MainWindow::buildUi() {
 
     m_settingsPanel = new SettingsWindow(this);
     m_settingsPanel->setAccentColor(m_accent);
-    m_settingsPanel->hide();
     connect(m_settingsPanel, &SettingsWindow::backRequested, this, &MainWindow::hideSettings);
+    connect(m_settingsPanel, &SettingsWindow::accentPreviewChanged, this, &MainWindow::onAccentPreviewChanged);
     connect(m_settingsPanel, &SettingsWindow::accentChanged, this, &MainWindow::onAccentChanged);
     connect(m_settingsPanel, &SettingsWindow::lineNumbersChanged, m_editor, &NoteEditor::setLineNumbersVisible);
     connect(m_settingsPanel, &SettingsWindow::wordWrapChanged, m_editor, &NoteEditor::setWordWrapEnabled);
@@ -307,13 +307,15 @@ void MainWindow::buildUi() {
     connect(m_settingsPanel, &SettingsWindow::lockWorkChamberRequested, this, &MainWindow::onLockWorkChamber);
     connect(m_settingsPanel, &SettingsWindow::unlockWorkChamberRequested, this, &MainWindow::onUnlockWorkChamber);
 
-    auto* rightStack = new QVBoxLayout();
-    rightStack->setContentsMargins(0, 0, 0, 0);
-    rightStack->addWidget(m_contentStack);
-    rightStack->addWidget(m_settingsPanel);
+    m_rightStack = new QStackedWidget(this);
+    m_rightStack->addWidget(m_contentStack);
+    m_rightStack->addWidget(m_settingsPanel);
 
     auto* rightWidget = new QWidget(this);
-    rightWidget->setLayout(rightStack);
+    auto* rightLayout = new QVBoxLayout(rightWidget);
+    rightLayout->setContentsMargins(0, 0, 0, 0);
+    rightLayout->setSpacing(0);
+    rightLayout->addWidget(m_rightStack, 1);
 
     rootLayout->addWidget(m_sidebar);
     rootLayout->addWidget(m_listStack);
@@ -356,6 +358,8 @@ void MainWindow::buildUi() {
     addAction(saveAction);
 
     applyAccent(m_accent);
+    m_editor->setLineNumbersVisible(AppSettings::lineNumbersEnabled());
+    m_editor->setWordWrapEnabled(AppSettings::wordWrapEnabled());
     qApp->installEventFilter(this);
 }
 
@@ -842,7 +846,7 @@ void MainWindow::refreshVaultHealth() {
 }
 
 void MainWindow::onEnableHelloUnlock() {
-    if (!WindowsHelloUnlock::isPlatformSupported()) {
+    if (!PlatformBiometricUnlock::isPlatformSupported()) {
         return;
     }
     bool ok = false;
@@ -864,12 +868,12 @@ void MainWindow::onEnableHelloUnlock() {
         return;
     }
 
-    if (!WindowsHelloUnlock::enable(verifyKey, password)) {
+    if (!PlatformBiometricUnlock::enable(verifyKey, password)) {
         CryptoManager::secureZero(verifyKey);
         DialogUtils::warning(
             this,
             QStringLiteral("Windows Hello"),
-            WindowsHelloUnlock::lastError());
+            PlatformBiometricUnlock::lastError());
         return;
     }
     CryptoManager::secureZero(verifyKey);
@@ -881,7 +885,7 @@ void MainWindow::onEnableHelloUnlock() {
 }
 
 void MainWindow::onDisableHelloUnlock() {
-    WindowsHelloUnlock::disable();
+    PlatformBiometricUnlock::disable();
     DialogUtils::information(
         this,
         QStringLiteral("Windows Hello"),
@@ -1394,13 +1398,13 @@ void MainWindow::refreshSidebar() {
 void MainWindow::showSettings() {
     saveCurrentCredential(false);
     refreshVaultHealth();
-    m_contentStack->hide();
-    m_settingsPanel->show();
+    m_settingsPanel->reloadFromStorage();
+    m_rightStack->setCurrentWidget(m_settingsPanel);
 }
 
 void MainWindow::hideSettings() {
-    m_settingsPanel->hide();
-    m_contentStack->show();
+    applyPersistedSettings();
+    m_rightStack->setCurrentWidget(m_contentStack);
     if (m_section == SidebarSection::Passwords) {
         showPasswordsMode();
     } else {
@@ -1408,13 +1412,41 @@ void MainWindow::hideSettings() {
     }
 }
 
-void MainWindow::onAccentChanged(const QString& hex) {
-    applyAccent(hex);
+void MainWindow::onAccentPreviewChanged(const QString& hex) {
+    applyAccent(hex, false);
 }
 
-void MainWindow::applyAccent(const QString& hex) {
+void MainWindow::onAccentChanged(const QString& hex) {
+    applyAccent(hex, true);
+}
+
+void MainWindow::applyPersistedSettings() {
+    m_settingsPanel->reloadFromStorage();
+    applyAccent(Theme::savedAccent(), false);
+    m_editor->setLineNumbersVisible(AppSettings::lineNumbersEnabled());
+    m_editor->setWordWrapEnabled(AppSettings::wordWrapEnabled());
+    m_session.setAutoLockEnabled(AppSettings::autoLockEnabled());
+    m_session.setAutoLockMinutes(AppSettings::autoLockMinutes());
+    m_autolockLabel->setText(AppSettings::autoLockEnabled()
+        ? QStringLiteral("Auto-lock: %1 min").arg(AppSettings::autoLockMinutes())
+        : QStringLiteral("Auto-lock: off"));
+    if (AppSettings::browserBridgeEnabled()) {
+        startBridge();
+    } else {
+        stopBridge();
+    }
+    if (m_bridgeLabel) {
+        m_bridgeLabel->setText(AppSettings::browserBridgeEnabled() && m_bridge
+            ? QStringLiteral("Bridge: on")
+            : QStringLiteral("Bridge: off"));
+    }
+}
+
+void MainWindow::applyAccent(const QString& hex, bool persist) {
     m_accent = hex;
-    Theme::saveAccent(hex);
+    if (persist) {
+        Theme::saveAccent(hex);
+    }
     m_editor->setAccentColor(QColor(hex));
     m_preview->setAccentColor(hex);
     if (QApplication* app = qApp) {

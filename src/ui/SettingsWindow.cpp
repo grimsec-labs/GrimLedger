@@ -1,7 +1,9 @@
 #include "ui/SettingsWindow.h"
 #include "ui/GrimFileDialog.h"
 #include "utils/AppSettings.h"
-#include "security/WindowsHelloUnlock.h"
+#include "utils/Theme.h"
+#include "utils/DialogUtils.h"
+#include "security/PlatformBiometricUnlock.h"
 #include "security/BreachCheck.h"
 
 #include <QVBoxLayout>
@@ -14,6 +16,9 @@
 #include <QPushButton>
 #include <QLabel>
 #include <QGroupBox>
+#include <QScrollArea>
+#include <QFrame>
+#include <QSizePolicy>
 #include <QSignalBlocker>
 
 namespace {
@@ -44,8 +49,21 @@ SettingsWindow::SettingsWindow(QWidget* parent)
 
 void SettingsWindow::buildUi() {
     setObjectName(QStringLiteral("SettingsWindow"));
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 
-    auto* layout = new QVBoxLayout(this);
+    auto* outer = new QVBoxLayout(this);
+    outer->setContentsMargins(0, 0, 0, 0);
+    outer->setSpacing(0);
+
+    auto* scroll = new QScrollArea(this);
+    scroll->setObjectName(QStringLiteral("SettingsScroll"));
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+
+    auto* content = new QWidget(scroll);
+    content->setObjectName(QStringLiteral("SettingsScrollContent"));
+    auto* layout = new QVBoxLayout(content);
     layout->setContentsMargins(24, 24, 24, 24);
     layout->setSpacing(16);
 
@@ -82,54 +100,32 @@ void SettingsWindow::buildUi() {
     m_accentCombo->addItem(QStringLiteral("Terminal Green"), QStringLiteral("#00cc66"));
     m_accentCombo->addItem(QStringLiteral("Abyss Purple"), QStringLiteral("#8844cc"));
     connect(m_accentCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) {
-        emit accentChanged(m_accentCombo->currentData().toString());
+        emit accentPreviewChanged(m_accentCombo->currentData().toString());
     });
     appForm->addRow(QStringLiteral("Accent color:"), m_accentCombo);
 
     m_lineNumbersCheck = new QCheckBox(QStringLiteral("Show line numbers"), this);
-    connect(m_lineNumbersCheck, &QCheckBox::toggled, this, &SettingsWindow::lineNumbersChanged);
     appForm->addRow(m_lineNumbersCheck);
 
     m_wordWrapCheck = new QCheckBox(QStringLiteral("Word wrap in editor"), this);
-    m_wordWrapCheck->setChecked(true);
-    connect(m_wordWrapCheck, &QCheckBox::toggled, this, &SettingsWindow::wordWrapChanged);
     appForm->addRow(m_wordWrapCheck);
 
     auto* security = new QGroupBox(QStringLiteral("Security"), this);
     auto* secForm = new QFormLayout(security);
 
     m_autoLockCheck = new QCheckBox(QStringLiteral("Auto-lock after inactivity"), this);
-    m_autoLockCheck->setChecked(AppSettings::autoLockEnabled());
     m_autoLockSpin = new QSpinBox(this);
     m_autoLockSpin->setRange(1, 120);
-    m_autoLockSpin->setValue(AppSettings::autoLockMinutes());
     m_autoLockSpin->setSuffix(QStringLiteral(" min"));
-    connect(m_autoLockCheck, &QCheckBox::toggled, this, [this](bool on) {
-        AppSettings::setAutoLockEnabled(on);
-        emit autoLockChanged(on, m_autoLockSpin->value());
-    });
-    connect(m_autoLockSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int v) {
-        AppSettings::setAutoLockMinutes(v);
-        emit autoLockChanged(m_autoLockCheck->isChecked(), v);
-    });
+    connect(m_autoLockCheck, &QCheckBox::toggled, m_autoLockSpin, &QSpinBox::setEnabled);
     secForm->addRow(m_autoLockCheck, m_autoLockSpin);
 
     m_browserBridgeCheck = new QCheckBox(
         QStringLiteral("Enable browser bridge (Chrome/Edge extension)"), this);
-    m_browserBridgeCheck->setChecked(AppSettings::browserBridgeEnabled());
-    connect(m_browserBridgeCheck, &QCheckBox::toggled, this, [this](bool on) {
-        AppSettings::setBrowserBridgeEnabled(on);
-        emit browserBridgeChanged(on);
-    });
     secForm->addRow(m_browserBridgeCheck);
 
     m_hibpCheck = new QCheckBox(
         QStringLiteral("Opt in to Have I Been Pwned k-anonymity checks"), this);
-    m_hibpCheck->setChecked(AppSettings::hibpCheckEnabled());
-    connect(m_hibpCheck, &QCheckBox::toggled, this, [this](bool on) {
-        BreachCheck::setEnabled(on);
-        emit hibpCheckChanged(on);
-    });
     secForm->addRow(m_hibpCheck);
 
     auto* hibpWarn = new QLabel(
@@ -139,12 +135,12 @@ void SettingsWindow::buildUi() {
     hibpWarn->setWordWrap(true);
     secForm->addRow(hibpWarn);
 
-    if (WindowsHelloUnlock::isPlatformSupported()) {
+    if (PlatformBiometricUnlock::isPlatformSupported()) {
         auto* helloRow = new QHBoxLayout();
         m_enableHelloBtn = new QPushButton(QStringLiteral("Enable Windows Hello Unlock"), this);
         m_disableHelloBtn = new QPushButton(QStringLiteral("Disable"), this);
         m_disableHelloBtn->setObjectName(QStringLiteral("SecondaryButton"));
-        m_disableHelloBtn->setEnabled(WindowsHelloUnlock::isConfigured());
+        m_disableHelloBtn->setEnabled(PlatformBiometricUnlock::isConfigured());
         connect(m_enableHelloBtn, &QPushButton::clicked, this, &SettingsWindow::enableHelloUnlockRequested);
         connect(m_disableHelloBtn, &QPushButton::clicked, this, [this]() {
             emit disableHelloUnlockRequested();
@@ -157,10 +153,6 @@ void SettingsWindow::buildUi() {
 
     m_selfDestructCheck = new QCheckBox(
         QStringLiteral("Destroy vault after 3 failed unlock attempts"), this);
-    m_selfDestructCheck->setChecked(AppSettings::selfDestructEnabled());
-    connect(m_selfDestructCheck, &QCheckBox::toggled, this, [this](bool on) {
-        AppSettings::setSelfDestructEnabled(on);
-    });
     secForm->addRow(m_selfDestructCheck);
 
     auto* selfDestructWarn = new QLabel(
@@ -250,19 +242,9 @@ void SettingsWindow::buildUi() {
     auto* workspaceLayout = new QVBoxLayout(workspace);
 
     m_clipperCheck = new QCheckBox(QStringLiteral("Enable encrypted web clipper (separate from fill)"), this);
-    m_clipperCheck->setChecked(AppSettings::webClipperEnabled());
-    connect(m_clipperCheck, &QCheckBox::toggled, this, [this](bool on) {
-        AppSettings::setWebClipperEnabled(on);
-        emit webClipperChanged(on);
-    });
     workspaceLayout->addWidget(m_clipperCheck);
 
     m_semanticSearchCheck = new QCheckBox(QStringLiteral("Enable local semantic search (synonym expansion)"), this);
-    m_semanticSearchCheck->setChecked(AppSettings::semanticSearchEnabled());
-    connect(m_semanticSearchCheck, &QCheckBox::toggled, this, [this](bool on) {
-        AppSettings::setSemanticSearchEnabled(on);
-        emit semanticSearchChanged(on);
-    });
     workspaceLayout->addWidget(m_semanticSearchCheck);
 
     auto* scanBtn = new QPushButton(QStringLiteral("Scan Notes for Secrets"), this);
@@ -298,6 +280,117 @@ void SettingsWindow::buildUi() {
     layout->addWidget(data);
     layout->addWidget(workspace);
     layout->addStretch();
+
+    scroll->setWidget(content);
+    outer->addWidget(scroll, 1);
+
+    auto* footer = new QWidget(this);
+    footer->setObjectName(QStringLiteral("SettingsFooter"));
+    auto* footerLayout = new QHBoxLayout(footer);
+    footerLayout->setContentsMargins(24, 12, 24, 16);
+    footerLayout->setSpacing(12);
+
+    m_statusLabel = new QLabel(this);
+    m_statusLabel->setObjectName(QStringLiteral("SaveStatus"));
+    footerLayout->addWidget(m_statusLabel, 1);
+
+    auto* resetBtn = new QPushButton(QStringLiteral("Reset to Defaults"), this);
+    resetBtn->setObjectName(QStringLiteral("SecondaryButton"));
+    connect(resetBtn, &QPushButton::clicked, this, &SettingsWindow::resetSettings);
+
+    auto* saveBtn = new QPushButton(QStringLiteral("Save Settings"), this);
+    saveBtn->setObjectName(QStringLiteral("PrimaryButton"));
+    connect(saveBtn, &QPushButton::clicked, this, &SettingsWindow::saveSettings);
+
+    footerLayout->addWidget(resetBtn);
+    footerLayout->addWidget(saveBtn);
+    outer->addWidget(footer);
+
+    loadFromStorage();
+}
+
+void SettingsWindow::reloadFromStorage() {
+    loadFromStorage();
+}
+
+void SettingsWindow::loadFromStorage() {
+    const QSignalBlocker blockAccent(m_accentCombo);
+    const QSignalBlocker blockLineNumbers(m_lineNumbersCheck);
+    const QSignalBlocker blockWordWrap(m_wordWrapCheck);
+    const QSignalBlocker blockAutoLock(m_autoLockCheck);
+    const QSignalBlocker blockAutoLockSpin(m_autoLockSpin);
+    const QSignalBlocker blockBridge(m_browserBridgeCheck);
+    const QSignalBlocker blockHibp(m_hibpCheck);
+    const QSignalBlocker blockSelfDestruct(m_selfDestructCheck);
+    const QSignalBlocker blockClipper(m_clipperCheck);
+    const QSignalBlocker blockSemantic(m_semanticSearchCheck);
+
+    setAccentColor(Theme::savedAccent());
+    m_lineNumbersCheck->setChecked(AppSettings::lineNumbersEnabled());
+    m_wordWrapCheck->setChecked(AppSettings::wordWrapEnabled());
+    m_autoLockCheck->setChecked(AppSettings::autoLockEnabled());
+    m_autoLockSpin->setValue(AppSettings::autoLockMinutes());
+    m_autoLockSpin->setEnabled(m_autoLockCheck->isChecked());
+    m_browserBridgeCheck->setChecked(AppSettings::browserBridgeEnabled());
+    m_hibpCheck->setChecked(AppSettings::hibpCheckEnabled());
+    m_selfDestructCheck->setChecked(AppSettings::selfDestructEnabled());
+    m_clipperCheck->setChecked(AppSettings::webClipperEnabled());
+    m_semanticSearchCheck->setChecked(AppSettings::semanticSearchEnabled());
+    setStatusMessage(QString());
+}
+
+void SettingsWindow::persistSettings() {
+    Theme::saveAccent(accentColor());
+    AppSettings::setLineNumbersEnabled(lineNumbers());
+    AppSettings::setWordWrapEnabled(wordWrap());
+    AppSettings::setAutoLockEnabled(autoLockEnabled());
+    AppSettings::setAutoLockMinutes(autoLockMinutes());
+    AppSettings::setBrowserBridgeEnabled(browserBridgeEnabled());
+    AppSettings::setHibpCheckEnabled(m_hibpCheck->isChecked());
+    AppSettings::setSelfDestructEnabled(selfDestructEnabled());
+    AppSettings::setWebClipperEnabled(m_clipperCheck->isChecked());
+    AppSettings::setSemanticSearchEnabled(m_semanticSearchCheck->isChecked());
+    BreachCheck::setEnabled(m_hibpCheck->isChecked());
+    AppSettings::sync();
+}
+
+void SettingsWindow::applySettingsToApp() {
+    emit accentChanged(accentColor());
+    emit lineNumbersChanged(lineNumbers());
+    emit wordWrapChanged(wordWrap());
+    emit autoLockChanged(autoLockEnabled(), autoLockMinutes());
+    emit browserBridgeChanged(browserBridgeEnabled());
+    emit hibpCheckChanged(m_hibpCheck->isChecked());
+    emit webClipperChanged(m_clipperCheck->isChecked());
+    emit semanticSearchChanged(m_semanticSearchCheck->isChecked());
+}
+
+void SettingsWindow::saveSettings() {
+    persistSettings();
+    applySettingsToApp();
+    setStatusMessage(QStringLiteral("Settings saved."));
+}
+
+void SettingsWindow::resetSettings() {
+    if (!DialogUtils::question(
+            this,
+            QStringLiteral("Reset Settings"),
+            QStringLiteral("Reset all preferences to defaults?\n\nVault data, backups, and Windows Hello configuration are not affected."))) {
+        return;
+    }
+
+    AppSettings::resetToDefaults();
+    Theme::saveAccent(Theme::kDefaultAccent);
+    BreachCheck::setEnabled(false);
+    loadFromStorage();
+    applySettingsToApp();
+    setStatusMessage(QStringLiteral("Settings reset to defaults."));
+}
+
+void SettingsWindow::setStatusMessage(const QString& text) {
+    if (m_statusLabel) {
+        m_statusLabel->setText(text);
+    }
 }
 
 void SettingsWindow::setVaultHealthReport(const VaultHealthReport& report) {
