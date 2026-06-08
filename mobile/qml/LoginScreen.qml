@@ -13,7 +13,7 @@ Item {
 
         Label {
             text: "GRIMLEDGER"
-            font.family: "Consolas"
+            font.family: "monospace"
             font.pixelSize: 22
             color: vault.accentColor
             Layout.alignment: Qt.AlignHCenter
@@ -21,7 +21,7 @@ Item {
 
         Label {
             text: "> enter master key:"
-            font.family: "Consolas"
+            font.family: "monospace"
             color: "#33cc66"
         }
 

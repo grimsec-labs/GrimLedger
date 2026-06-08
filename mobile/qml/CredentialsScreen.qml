@@ -15,7 +15,7 @@ Item {
             ColumnLayout {
                 width: parent.width
                 Label { text: modelData.label; color: "#cc2200"; font.bold: true }
-                Label { text: modelData.username; color: "#d4d4dc"; font.family: "Consolas" }
+                Label { text: modelData.username; color: "#d4d4dc"; font.family: "monospace" }
                 Label { text: modelData.url; color: "#998877"; elide: Text.ElideRight; Layout.fillWidth: true }
             }
         }

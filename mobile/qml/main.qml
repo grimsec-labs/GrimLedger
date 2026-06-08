@@ -38,7 +38,7 @@ ApplicationWindow {
                         text: parent.text
                         color: parent.checked ? vault.accentColor : "#998877"
                         horizontalAlignment: Text.AlignHCenter
-                        font.family: "Consolas"
+                        font.family: "monospace"
                     }
                 }
                 TabButton {
@@ -47,7 +47,7 @@ ApplicationWindow {
                         text: parent.text
                         color: parent.checked ? vault.accentColor : "#998877"
                         horizontalAlignment: Text.AlignHCenter
-                        font.family: "Consolas"
+                        font.family: "monospace"
                     }
                 }
                 TabButton {
@@ -56,7 +56,7 @@ ApplicationWindow {
                         text: parent.text
                         color: parent.checked ? vault.accentColor : "#998877"
                         horizontalAlignment: Text.AlignHCenter
-                        font.family: "Consolas"
+                        font.family: "monospace"
                     }
                 }
             }
