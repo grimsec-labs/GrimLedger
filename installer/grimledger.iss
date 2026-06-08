@@ -51,11 +51,11 @@ Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
-Filename: "explorer.exe"; Parameters: "{localappdata}\GrimLedger\browser-extension"; Description: "Open extension folder for ""Load unpacked"""; Flags: postinstall nowait skipifsilent; Tasks: openextfolder
+Filename: "{win}\explorer.exe"; Parameters: """{localappdata}\GrimLedger\browser-extension"""; Description: "Open extension folder for ""Load unpacked"""; Flags: postinstall nowait skipifsilent; Tasks: openextfolder
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent unchecked
 
 [UninstallRun]
-Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -File ""{app}\native-host\uninstall-windows.ps1"" -Browser Both"; Flags: runhidden waituntilterminated
+Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -File ""{app}\native-host\uninstall-windows.ps1"" -Browser Both"; Flags: runhidden waituntilterminated; RunOnceId: "UninstallNativeHost"
 
 [Code]
 var
