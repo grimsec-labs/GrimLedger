@@ -18,9 +18,11 @@ target_link_libraries(GrimLedgerMobile PRIVATE
     Qt6::Gui
     Qt6::Qml
     Qt6::Quick
+    Qt6::QuickControls2
 )
 
 set_target_properties(GrimLedgerMobile PROPERTIES
     OUTPUT_NAME "GrimLedger"
     QT_ANDROID_PACKAGE_SOURCE_DIR ${CMAKE_SOURCE_DIR}/android
+    QT_QML_IMPORT_PATH "${CMAKE_CURRENT_SOURCE_DIR}/qml"
 )

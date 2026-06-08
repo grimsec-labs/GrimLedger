@@ -1,9 +1,8 @@
 package org.grimseclabs.grimledger
 
 object GrimLedgerBridge {
-    init {
-        System.loadLibrary("GrimLedger")
-    }
+    // Native lib is loaded by Qt (android.app.lib_name); do not call loadLibrary here —
+    // the APK ships libGrimLedger_<abi>.so, not libGrimLedger.so.
 
     @JvmStatic
     external fun nativeSetVaultController(ptr: Long)

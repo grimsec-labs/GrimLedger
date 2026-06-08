@@ -3,6 +3,7 @@
 #include <QObject>
 #include <QJsonArray>
 #include <QString>
+#include <QVariantMap>
 #include <QVector>
 
 #include "models/CredentialSummary.h"
@@ -18,6 +19,8 @@ class GrimVaultController : public QObject {
     Q_PROPERTY(bool unlocked READ isUnlocked NOTIFY unlockedChanged)
     Q_PROPERTY(bool vaultExists READ vaultExists NOTIFY vaultExistsChanged)
     Q_PROPERTY(QString accentColor READ accentColor WRITE setAccentColor NOTIFY accentColorChanged)
+    Q_PROPERTY(QVariantList notes READ noteSummaries NOTIFY notesChanged)
+    Q_PROPERTY(QVariantList credentials READ credentialSummaries NOTIFY credentialsChanged)
 
 public:
     explicit GrimVaultController(QObject* parent = nullptr);
@@ -46,6 +49,19 @@ public:
 
     Q_INVOKABLE QVariantList credentialSummaries() const;
     Q_INVOKABLE QString credentialPassword(qint64 id) const;
+    Q_INVOKABLE QVariantMap credentialDetails(qint64 id) const;
+    Q_INVOKABLE qint64 createCredential(
+        const QString& label,
+        const QString& username,
+        const QString& password,
+        const QString& url);
+    Q_INVOKABLE bool updateCredential(
+        qint64 id,
+        const QString& label,
+        const QString& username,
+        const QString& password,
+        const QString& url);
+    Q_INVOKABLE bool deleteCredential(qint64 id);
 
     Q_INVOKABLE void saveSettings(bool lineNumbers, bool wordWrap, bool autoLock, int autoLockMin);
     Q_INVOKABLE void resetSettings();
@@ -56,6 +72,8 @@ signals:
     void unlockedChanged();
     void vaultExistsChanged();
     void accentColorChanged();
+    void notesChanged();
+    void credentialsChanged();
     void errorOccurred(const QString& message);
 
 private:

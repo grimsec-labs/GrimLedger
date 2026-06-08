@@ -1,61 +1,108 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import Grim
 
 Item {
     id: loginRoot
     signal unlocked()
 
+    Rectangle {
+        anchors.fill: parent
+        gradient: Gradient {
+            GradientStop { position: 0; color: "#08080a" }
+            GradientStop { position: 0.5; color: "#0e0a0c" }
+            GradientStop { position: 1; color: "#0a0808" }
+        }
+    }
+
     ColumnLayout {
         anchors.centerIn: parent
         width: Math.min(parent.width - 48, 360)
-        spacing: 16
+        spacing: Theme.spacing
 
-        Label {
-            text: "GRIMLEDGER"
-            font.family: "Consolas"
-            font.pixelSize: 22
-            color: vault.accentColor
+        Image {
+            source: "qrc:/logo.png"
+            fillMode: Image.PreserveAspectFit
+            Layout.preferredWidth: Math.min(parent.width, 320)
+            Layout.preferredHeight: 140
             Layout.alignment: Qt.AlignHCenter
         }
 
         Label {
-            text: "> enter master key:"
-            font.family: "Consolas"
-            color: "#33cc66"
+            text: "// vault access"
+            font.family: Theme.monoFont
+            font.pixelSize: 11
+            color: Theme.textDim
+            Layout.alignment: Qt.AlignHCenter
         }
 
-        TextField {
-            id: passwordField
+        RowLayout {
             Layout.fillWidth: true
-            echoMode: TextInput.Password
-            placeholderText: "Master password"
-            color: "#e8e8ec"
-            background: Rectangle { color: "#111114"; border.color: "#331111"; radius: 3 }
-        }
-
-        Button {
-            text: vault.vaultExists ? "Unlock Vault" : "Create Vault"
-            Layout.fillWidth: true
-            onClicked: {
-                if (vault.vaultExists) {
-                    if (vault.unlock(passwordField.text)) unlocked()
-                } else {
-                    if (vault.createVault(passwordField.text)) unlocked()
+            spacing: 4
+            Label {
+                text: "> enter master key:"
+                font.family: Theme.monoFont
+                color: Theme.prompt
+            }
+            Label {
+                id: blinkCursor
+                text: "_"
+                font.family: Theme.monoFont
+                color: Theme.prompt
+                Timer {
+                    interval: 530
+                    running: true
+                    repeat: true
+                    onTriggered: blinkCursor.visible = !blinkCursor.visible
                 }
             }
         }
 
-        Button {
+        GrimTextField {
+            id: passwordField
+            Layout.fillWidth: true
+            echoMode: TextInput.Password
+            placeholderText: "Master password"
+            onAccepted: actionButton.clicked()
+        }
+
+        GrimButton {
+            id: actionButton
+            text: vault.vaultExists ? "Unlock Vault" : "Create Vault"
+            Layout.fillWidth: true
+            onClicked: {
+                if (vault.vaultExists) {
+                    if (vault.unlock(passwordField.text))
+                        unlocked()
+                } else {
+                    if (vault.createVault(passwordField.text))
+                        unlocked()
+                }
+            }
+        }
+
+        GrimButton {
             text: "Biometric unlock"
+            primary: false
             visible: vault.biometricSupported && vault.biometricConfigured
             Layout.fillWidth: true
             onClicked: { if (vault.biometricUnlock()) unlocked() }
         }
 
         Label {
+            text: "⚠ Lost master passwords cannot be recovered."
+            color: Theme.warning
+            font.pixelSize: 11
+            wrapMode: Text.WordWrap
+            horizontalAlignment: Text.AlignHCenter
+            Layout.fillWidth: true
+        }
+
+        Label {
             id: errorLabel
-            color: "#ff4444"
+            color: Theme.error
+            font.family: Theme.monoFont
             wrapMode: Text.WordWrap
             Layout.fillWidth: true
             visible: text.length > 0

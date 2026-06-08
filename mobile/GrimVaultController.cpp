@@ -4,6 +4,7 @@
 #include "android_jni_bridge.h"
 #endif
 #include "bridge/OriginMatcher.h"
+#include "models/Credential.h"
 #include "security/CryptoManager.h"
 #include "security/PasswordManager.h"
 #include "security/PlatformBiometricUnlock.h"
@@ -27,13 +28,14 @@ void saveAccent(const QString& hex) {
 
 GrimVaultController::GrimVaultController(QObject* parent)
     : QObject(parent)
+    , m_session(this)
     , m_vault(m_db)
     , m_notes(m_db)
     , m_credentials(m_db) {
     m_db.open(Database::defaultVaultPath());
     m_accent = savedAccent();
 #if defined(Q_OS_ANDROID)
-    AndroidJniBridge_registerController(this);
+    // JNI registration happens from main() after QML loads.
 #endif
 }
 
@@ -57,6 +59,8 @@ bool GrimVaultController::unlock(const QString& password) {
     }
     m_session.setKey(std::move(key));
     emit unlockedChanged();
+    emit notesChanged();
+    emit credentialsChanged();
     return true;
 }
 
@@ -76,6 +80,8 @@ bool GrimVaultController::createVault(const QString& password) {
 void GrimVaultController::lock() {
     m_session.lock();
     emit unlockedChanged();
+    emit notesChanged();
+    emit credentialsChanged();
 }
 
 bool GrimVaultController::biometricUnlock() {
@@ -92,6 +98,8 @@ bool GrimVaultController::biometricUnlock() {
     }
     m_session.setKey(std::move(key));
     emit unlockedChanged();
+    emit notesChanged();
+    emit credentialsChanged();
     return true;
 }
 
@@ -151,7 +159,11 @@ bool GrimVaultController::saveNote(qint64 noteId, const QString& title, const QS
     note.id = noteId;
     note.title = title;
     note.body = body;
-    return m_notes.updateNote(note, m_session.key());
+    const bool ok = m_notes.updateNote(note, m_session.key());
+    if (ok) {
+        emit notesChanged();
+    }
+    return ok;
 }
 
 qint64 GrimVaultController::createNote(const QString& title) {
@@ -160,7 +172,11 @@ qint64 GrimVaultController::createNote(const QString& title) {
     }
     Note note;
     note.title = title;
-    return m_notes.createNote(note, m_session.key());
+    const qint64 id = m_notes.createNote(note, m_session.key());
+    if (id > 0) {
+        emit notesChanged();
+    }
+    return id;
 }
 
 QVariantList GrimVaultController::credentialSummaries() const {
@@ -185,6 +201,79 @@ QString GrimVaultController::credentialPassword(qint64 id) const {
     }
     const auto cred = m_credentials.getCredential(id, m_session.key());
     return cred ? cred->password : QString();
+}
+
+QVariantMap GrimVaultController::credentialDetails(qint64 id) const {
+    QVariantMap row;
+    if (!isUnlocked()) {
+        return row;
+    }
+    const auto cred = m_credentials.getCredential(id, m_session.key());
+    if (!cred) {
+        return row;
+    }
+    row.insert(QStringLiteral("id"), cred->id);
+    row.insert(QStringLiteral("label"), cred->label);
+    row.insert(QStringLiteral("username"), cred->username);
+    row.insert(QStringLiteral("password"), cred->password);
+    row.insert(QStringLiteral("url"), cred->url);
+    return row;
+}
+
+qint64 GrimVaultController::createCredential(
+    const QString& label,
+    const QString& username,
+    const QString& password,
+    const QString& url) {
+    if (!isUnlocked()) {
+        return 0;
+    }
+    Credential cred;
+    cred.label = label.trimmed().isEmpty() ? QStringLiteral("Untitled") : label.trimmed();
+    cred.username = username;
+    cred.password = password;
+    cred.url = url;
+    const qint64 id = m_credentials.createCredential(cred, m_session.key());
+    if (id > 0) {
+        emit credentialsChanged();
+    }
+    return id;
+}
+
+bool GrimVaultController::updateCredential(
+    qint64 id,
+    const QString& label,
+    const QString& username,
+    const QString& password,
+    const QString& url) {
+    if (!isUnlocked()) {
+        return false;
+    }
+    const auto existing = m_credentials.getCredential(id, m_session.key());
+    if (!existing) {
+        return false;
+    }
+    Credential cred = *existing;
+    cred.label = label.trimmed().isEmpty() ? QStringLiteral("Untitled") : label.trimmed();
+    cred.username = username;
+    cred.password = password;
+    cred.url = url;
+    const bool ok = m_credentials.updateCredential(cred, m_session.key());
+    if (ok) {
+        emit credentialsChanged();
+    }
+    return ok;
+}
+
+bool GrimVaultController::deleteCredential(qint64 id) {
+    if (!isUnlocked()) {
+        return false;
+    }
+    const bool ok = m_credentials.deleteCredential(id);
+    if (ok) {
+        emit credentialsChanged();
+    }
+    return ok;
 }
 
 QJsonArray GrimVaultController::credentialsForOrigin(const QString& origin) const {

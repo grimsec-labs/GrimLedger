@@ -1,10 +1,16 @@
 <RCC>
     <qresource prefix="/">
+        <file alias="logo.png">../resources/logo.png</file>
+        <file alias="icon.png">../resources/icon.png</file>
         <file>qml/main.qml</file>
         <file>qml/LoginScreen.qml</file>
         <file>qml/NotesScreen.qml</file>
         <file>qml/CredentialsScreen.qml</file>
         <file>qml/SettingsScreen.qml</file>
-        <file>qml/Theme.qml</file>
+        <file>qml/Grim/qmldir</file>
+        <file>qml/Grim/Theme.qml</file>
+        <file>qml/Grim/GrimButton.qml</file>
+        <file>qml/Grim/GrimTextField.qml</file>
+        <file>qml/Grim/GrimFrame.qml</file>
     </qresource>
 </RCC>

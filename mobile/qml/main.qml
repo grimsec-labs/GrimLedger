@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import Grim
 
 ApplicationWindow {
     id: root
@@ -8,18 +9,35 @@ ApplicationWindow {
     width: 400
     height: 720
     title: "GrimLedger"
-    color: "#0a0a0c"
+    color: Theme.bg
 
     StackView {
         id: stack
         anchors.fill: parent
-        initialItem: loginScreen
+        initialItem: loginHost
+    }
+
+    Connections {
+        target: vault
+        function onUnlockedChanged() {
+            if (!vault.unlocked)
+                stack.replace(loginHost)
+        }
     }
 
     Component {
-        id: loginScreen
-        LoginScreen {
-            onUnlocked: stack.replace(mainShell)
+        id: loginHost
+        Item {
+            implicitWidth: stack.width
+            implicitHeight: stack.height
+            Loader {
+                anchors.fill: parent
+                source: "LoginScreen.qml"
+                onLoaded: {
+                    if (item)
+                        item.unlocked.connect(function() { stack.replace(mainShell) })
+                }
+            }
         }
     }
 
@@ -27,36 +45,69 @@ ApplicationWindow {
         id: mainShell
         ColumnLayout {
             spacing: 0
+            implicitWidth: stack.width
+            implicitHeight: stack.height
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 52
+                color: Theme.panelAlt
+                border.color: Theme.border
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 14
+                    anchors.rightMargin: 14
+                    spacing: 10
+                    Image {
+                        source: "qrc:/logo.png"
+                        fillMode: Image.PreserveAspectFit
+                        Layout.preferredWidth: 28
+                        Layout.preferredHeight: 28
+                    }
+                    Label {
+                        text: "GRIMLEDGER"
+                        font.family: Theme.monoFont
+                        font.bold: true
+                        font.letterSpacing: 2
+                        color: Theme.accent()
+                        Layout.fillWidth: true
+                    }
+                }
+            }
 
             TabBar {
                 id: tabs
                 Layout.fillWidth: true
-                background: Rectangle { color: "#111114" }
+                background: Rectangle { color: Theme.panelAlt }
+
                 TabButton {
                     text: "Notes"
                     contentItem: Text {
                         text: parent.text
-                        color: parent.checked ? vault.accentColor : "#998877"
+                        color: parent.checked ? Theme.accent() : Theme.textMuted
                         horizontalAlignment: Text.AlignHCenter
-                        font.family: "Consolas"
+                        font.family: Theme.monoFont
+                        font.bold: parent.checked
                     }
                 }
                 TabButton {
                     text: "Keys"
                     contentItem: Text {
                         text: parent.text
-                        color: parent.checked ? vault.accentColor : "#998877"
+                        color: parent.checked ? Theme.accent() : Theme.textMuted
                         horizontalAlignment: Text.AlignHCenter
-                        font.family: "Consolas"
+                        font.family: Theme.monoFont
+                        font.bold: parent.checked
                     }
                 }
                 TabButton {
                     text: "Settings"
                     contentItem: Text {
                         text: parent.text
-                        color: parent.checked ? vault.accentColor : "#998877"
+                        color: parent.checked ? Theme.accent() : Theme.textMuted
                         horizontalAlignment: Text.AlignHCenter
-                        font.family: "Consolas"
+                        font.family: Theme.monoFont
+                        font.bold: parent.checked
                     }
                 }
             }
@@ -66,9 +117,9 @@ ApplicationWindow {
                 Layout.fillHeight: true
                 currentIndex: tabs.currentIndex
 
-                NotesScreen {}
-                CredentialsScreen {}
-                SettingsScreen {}
+                Loader { source: "NotesScreen.qml"; Layout.fillWidth: true; Layout.fillHeight: true }
+                Loader { source: "CredentialsScreen.qml"; Layout.fillWidth: true; Layout.fillHeight: true }
+                Loader { source: "SettingsScreen.qml"; Layout.fillWidth: true; Layout.fillHeight: true }
             }
         }
     }

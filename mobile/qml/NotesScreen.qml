@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import Grim
 
 Item {
     id: notesRoot
@@ -9,22 +10,22 @@ Item {
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 12
+        anchors.margins: Theme.spacing
         spacing: 8
 
         RowLayout {
             Layout.fillWidth: true
-            Button {
+            GrimButton {
                 text: "+ New"
                 onClicked: {
                     currentNoteId = vault.createNote("Untitled")
-                    noteList.model = vault.noteSummaries()
                     titleField.text = "Untitled"
                     bodyField.text = ""
                 }
             }
-            Button {
+            GrimButton {
                 text: "Save"
+                primary: false
                 onClicked: vault.saveNote(currentNoteId, titleField.text, bodyField.text)
             }
         }
@@ -33,25 +34,31 @@ Item {
             id: noteList
             Layout.fillWidth: true
             Layout.preferredHeight: 140
-            model: vault.noteSummaries()
+            model: vault.notes
             clip: true
+            spacing: 4
             delegate: ItemDelegate {
                 width: ListView.view.width
                 text: modelData.title
+                font.family: Theme.monoFont
+                highlighted: currentNoteId === modelData.id
                 onClicked: {
                     currentNoteId = modelData.id
                     titleField.text = modelData.title
                     bodyField.text = vault.noteBody(modelData.id)
                 }
+                background: Rectangle {
+                    radius: Theme.radius
+                    color: parent.highlighted ? "#1a1010" : Theme.panel
+                    border.color: parent.highlighted ? Theme.accent() : Theme.border
+                }
             }
         }
 
-        TextField {
+        GrimTextField {
             id: titleField
             Layout.fillWidth: true
             placeholderText: "Title"
-            color: "#e8e8ec"
-            background: Rectangle { color: "#111114"; border.color: "#331111"; radius: 3 }
         }
 
         ScrollView {
@@ -60,11 +67,24 @@ Item {
             TextArea {
                 id: bodyField
                 wrapMode: TextArea.Wrap
-                color: "#e8e8ec"
-                background: Rectangle { color: "#111114"; border.color: "#331111"; radius: 3 }
+                color: Theme.text
+                font.family: Theme.monoFont
+                selectByMouse: true
+                background: Rectangle {
+                    radius: Theme.radius
+                    color: Theme.panelAlt
+                    border.color: activeFocus ? Theme.accent() : Theme.border
+                    border.width: 1
+                }
             }
         }
     }
 
-    Component.onCompleted: noteList.model = vault.noteSummaries()
+    Component.onCompleted: {
+        if (vault.notes.length > 0) {
+            currentNoteId = vault.notes[0].id
+            titleField.text = vault.notes[0].title
+            bodyField.text = vault.noteBody(currentNoteId)
+        }
+    }
 }

@@ -1,30 +1,41 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import Grim
 
 ScrollView {
     anchors.fill: parent
+
     ColumnLayout {
         width: parent.width
-        anchors.margins: 16
-        spacing: 12
+        anchors.margins: Theme.spacing
+        spacing: Theme.spacing
 
-        Label { text: "Vault Settings"; color: "#cc2200"; font.pixelSize: 18; font.bold: true }
+        Label {
+            text: "Vault Settings"
+            color: Theme.accent()
+            font.pixelSize: 18
+            font.bold: true
+            font.family: Theme.monoFont
+        }
 
         CheckBox {
             id: lineNumbersCheck
             text: "Show line numbers"
             checked: vault.lineNumbers()
+            font.family: Theme.monoFont
         }
         CheckBox {
             id: wordWrapCheck
             text: "Word wrap in editor"
             checked: vault.wordWrap()
+            font.family: Theme.monoFont
         }
         CheckBox {
             id: autoLockCheck
             text: "Auto-lock after inactivity"
             checked: true
+            font.family: Theme.monoFont
         }
         SpinBox {
             id: autoLockSpin
@@ -35,25 +46,25 @@ ScrollView {
 
         Label {
             text: "Biometric unlock"
-            color: "#cc2200"
+            color: Theme.accent()
             font.bold: true
+            font.family: Theme.monoFont
             visible: vault.biometricSupported
         }
         RowLayout {
             Layout.fillWidth: true
             visible: vault.biometricSupported
             spacing: 8
-            TextField {
+            GrimTextField {
                 id: biometricPasswordField
                 visible: vault.biometricSupported && !vault.biometricConfigured
                 echoMode: TextInput.Password
                 placeholderText: "Password to enable biometric"
                 Layout.fillWidth: true
-                color: "#e8e8ec"
-                background: Rectangle { color: "#111114"; border.color: "#331111"; radius: 3 }
             }
-            Button {
+            GrimButton {
                 text: vault.biometricConfigured ? "Disable biometric" : "Enable biometric"
+                primary: false
                 onClicked: {
                     if (vault.biometricConfigured) {
                         vault.disableBiometric()
@@ -68,16 +79,18 @@ ScrollView {
         RowLayout {
             Layout.fillWidth: true
             spacing: 8
-            Button {
+            GrimButton {
                 text: "Reset to Defaults"
+                primary: false
                 onClicked: {
                     vault.resetSettings()
                     lineNumbersCheck.checked = vault.lineNumbers()
                     wordWrapCheck.checked = vault.wordWrap()
                 }
             }
-            Button {
+            GrimButton {
                 text: "Save Settings"
+                primary: false
                 onClicked: vault.saveSettings(
                     lineNumbersCheck.checked,
                     wordWrapCheck.checked,
@@ -86,10 +99,19 @@ ScrollView {
             }
         }
 
-        Button {
+        GrimButton {
             text: "Lock Vault"
             Layout.fillWidth: true
             onClicked: vault.lock()
+        }
+
+        Label {
+            text: "Android uses a separate vault file from desktop. Sync via GrimShare when available."
+            color: Theme.textDim
+            font.pixelSize: 11
+            wrapMode: Text.WordWrap
+            Layout.fillWidth: true
+            font.family: Theme.monoFont
         }
     }
 }

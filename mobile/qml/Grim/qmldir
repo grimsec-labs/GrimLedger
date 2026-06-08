@@ -1,0 +1,5 @@
+module Grim
+singleton Theme 1.0 Theme.qml
+GrimButton 1.0 GrimButton.qml
+GrimTextField 1.0 GrimTextField.qml
+GrimFrame 1.0 GrimFrame.qml
