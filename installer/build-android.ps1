@@ -60,9 +60,27 @@ if (-not (Test-Path $DeployQt)) {
 }
 
 Write-Host "Packaging APK..."
-& $DeployQt --input "$BuildDir\android-GrimLedgerMobile-deployment-settings.json" `
-    --output "$RepoRoot\dist\android" `
-    --android-platform android-34 `
-    --release
+$DeployInput = Join-Path $BuildDir "mobile\android-GrimLedgerMobile-deployment-settings.json"
+$DeployOutput = Join-Path $RepoRoot "dist\android"
+New-Item -ItemType Directory -Force -Path $DeployOutput | Out-Null
+
+if (-not (Test-Path $DeployInput)) {
+    throw "Deployment settings not found: $DeployInput (CMake APK step may have already built it)"
+}
+
+$ApkCandidates = @(
+    (Join-Path $BuildDir "mobile\android-build\GrimLedgerMobile.apk"),
+    (Join-Path $BuildDir "mobile\android-build\build\outputs\apk\release\android-build-release-unsigned.apk")
+)
+$ApkFromCmake = $ApkCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+if ($ApkFromCmake) {
+    Copy-Item $ApkFromCmake (Join-Path $DeployOutput "GrimLedger-unsigned.apk") -Force
+    Write-Host "APK: $DeployOutput\GrimLedger-unsigned.apk"
+} elseif (Test-Path $DeployInput) {
+    & $DeployQt --input $DeployInput `
+        --output $DeployOutput `
+        --android-platform android-34 `
+        --release
+}
 
 Write-Host "Output: $RepoRoot\dist\android"

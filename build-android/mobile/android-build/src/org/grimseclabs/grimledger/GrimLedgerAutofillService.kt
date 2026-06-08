@@ -1,5 +1,6 @@
 package org.grimseclabs.grimledger
 
+import android.app.assist.AssistStructure
 import android.os.CancellationSignal
 import android.service.autofill.AutofillService
 import android.service.autofill.Dataset
@@ -23,17 +24,19 @@ class GrimLedgerAutofillService : AutofillService() {
         var usernameId: AutofillId? = null
         var passwordId: AutofillId? = null
 
-        for (i in 0 until structure.childCount) {
-            val node = structure.getChildAt(i) ?: continue
-            val hint = node.hint ?: node.htmlInfo?.tag ?: ""
-            if (hint.contains("username", true) || hint.contains("email", true)) {
-                usernameId = node.autofillId
-            }
-            if (hint.contains("password", true)) {
-                passwordId = node.autofillId
-            }
-            if (webOrigin.isEmpty()) {
-                webOrigin = node.webDomain ?: ""
+        for (i in 0 until structure.windowNodeCount) {
+            val root = structure.getWindowNodeAt(i).rootViewNode
+            visitNode(root) { node ->
+                val hint = node.hint ?: node.htmlInfo?.tag ?: ""
+                if (usernameId == null && (hint.contains("username", true) || hint.contains("email", true))) {
+                    usernameId = node.autofillId
+                }
+                if (passwordId == null && hint.contains("password", true)) {
+                    passwordId = node.autofillId
+                }
+                if (webOrigin.isEmpty()) {
+                    webOrigin = node.webDomain ?: ""
+                }
             }
         }
 
@@ -41,6 +44,9 @@ class GrimLedgerAutofillService : AutofillService() {
             callback.onSuccess(null)
             return
         }
+
+        val usernameFieldId = usernameId!!
+        val passwordFieldId = passwordId!!
 
         val json = GrimLedgerBridge.nativeCredentialsForOrigin("https://$webOrigin")
         val array = JSONArray(json)
@@ -59,8 +65,8 @@ class GrimLedgerAutofillService : AutofillService() {
         }
 
         val dataset = Dataset.Builder(presentation)
-            .setValue(usernameId, AutofillValue.forText(username))
-            .setValue(passwordId, AutofillValue.forText(password))
+            .setValue(usernameFieldId, AutofillValue.forText(username))
+            .setValue(passwordFieldId, AutofillValue.forText(password))
             .build()
 
         callback.onSuccess(FillResponse.Builder().addDataset(dataset).build())
@@ -68,5 +74,12 @@ class GrimLedgerAutofillService : AutofillService() {
 
     override fun onSaveRequest(request: android.service.autofill.SaveRequest, callback: android.service.autofill.SaveCallback) {
         callback.onSuccess()
+    }
+
+    private fun visitNode(node: AssistStructure.ViewNode, block: (AssistStructure.ViewNode) -> Unit) {
+        block(node)
+        for (i in 0 until node.childCount) {
+            visitNode(node.getChildAt(i), block)
+        }
     }
 }
