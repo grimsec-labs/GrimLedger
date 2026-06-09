@@ -102,17 +102,41 @@ cmake --build build --config Release
 .\build\Release\GrimLedger.exe
 ```
 
-### Linux
+### Linux (Ubuntu / Kali / Debian)
 
 ```bash
-sudo apt install qt6-base-dev cmake build-essential
+sudo apt install build-essential cmake ninja-build \
+  qt6-base-dev qt6-tools-dev libgl1-mesa-dev
 
-cd GrimLedger
-cmake -B build
-cmake --build build
+chmod +x installer/build-linux.sh
+./installer/build-linux.sh
 
-./build/GrimLedger
+# Run from build tree
+./build-linux/GrimLedger
+
+# Or install for current user (~/.local)
+cd dist/GrimLedger-linux && ./install.sh
 ```
+
+See [installer/README-linux.md](installer/README-linux.md) for browser bridge setup and options.
+
+### macOS
+
+```bash
+brew install qt cmake ninja
+export CMAKE_PREFIX_PATH="$(brew --prefix qt)"
+
+chmod +x installer/build-macos.sh
+./installer/build-macos.sh
+
+# Run from build tree
+open build-macos/GrimLedger.app
+
+# Or install to ~/Applications
+cd dist/GrimLedger-macos && ./install.sh
+```
+
+See [installer/README-macos.md](installer/README-macos.md) for browser bridge setup and code signing notes.
 
 ### Windows installer (Setup.exe)
 
@@ -129,30 +153,12 @@ See [installer/README.md](installer/README.md) for details.
 ### Run tests
 
 ```bash
+# Linux / macOS (after build-linux.sh or build-macos.sh)
+ctest --test-dir build-linux --output-on-failure
+
+# Windows
 ctest --test-dir build -C Release --output-on-failure
 ```
-
-### macOS
-
-```bash
-brew install qt cmake
-
-cd GrimLedger
-cmake -B build -DCMAKE_PREFIX_PATH="$(brew --prefix qt)"
-cmake --build build
-
-./build/GrimLedger.app/Contents/MacOS/GrimLedger
-```
-
-### Android
-
-Qt Quick mobile build (shared `grimledger_core` library). See [docs/ANDROID.md](docs/ANDROID.md).
-
-```powershell
-.\installer\build-android.ps1
-```
-
-Output: `dist\android\`
 
 ---
 

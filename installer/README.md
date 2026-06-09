@@ -1,3 +1,13 @@
+# GrimLedger installers
+
+| Platform | Build script | Install guide |
+|----------|--------------|---------------|
+| **Windows** | `build-installer.ps1` | This file |
+| **Linux** | `build-linux.sh` | [README-linux.md](README-linux.md) |
+| **macOS** | `build-macos.sh` | [README-macos.md](README-macos.md) |
+
+---
+
 # GrimLedger Windows installer
 
 **Recommended:** single `Setup.exe` built with **Inno Setup 6** (free, widely used for Qt apps).
