@@ -1,6 +1,14 @@
-Browser bridge — next steps
-===========================
+ ███  ████  ███ █   █     ████ █████  ███     █      ███  ████   ████ 
+█     █   █  █  ██ ██    █     █     █        █     █   █ █   █ █     
+█  ██ ████   █  █ █ █     ███  ████  █        █     █████ ████   ███  
+█   █ █  █   █  █   █        █ █     █        █     █   █ █   █     █ 
+ ███  █   █ ███ █   █    ████  █████  ███     █████ █   █ ████  ████  
 
+                    GrimLedger installed successfully
+
+
+BROWSER BRIDGE — NEXT STEPS
+---------------------------
 1. Open Chrome or Edge and go to:  chrome://extensions
 
 2. Turn on Developer mode.
@@ -12,7 +20,16 @@ Browser bridge — next steps
 
 5. Unlock GrimLedger and keep it running while using the extension.
 
-If you skipped the extension ID during setup, run install-windows.ps1 from the app folder:
+
+NATIVE MESSAGING HOST
+---------------------
+If you skipped the extension ID during setup, run:
    %LOCALAPPDATA%\GrimLedger\app\native-host\install-windows.ps1
 
-Vault data is stored separately (not removed by uninstall unless you delete it manually).
+
+VAULT DATA
+----------
+Your vault is stored at:
+   %APPDATA%\GrimLedger\vault.grim
+
+Uninstalling the app does not delete your vault unless you remove it manually.

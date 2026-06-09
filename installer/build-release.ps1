@@ -151,6 +151,12 @@ if ($BuildSetup) {
     } else {
         Write-Host "Building Setup.exe..."
         & $Iscc (Join-Path $PSScriptRoot "grimledger.iss")
-        Write-Host "Installer: $(Join-Path $RepoRoot 'dist\GrimLedger-Setup.exe')"
+        $DistDir = Join-Path $RepoRoot "dist"
+        $SetupPath = Join-Path $DistDir "GrimLedger-Setup.exe"
+        Copy-Item (Join-Path $PSScriptRoot "read-before-install.txt") (Join-Path $DistDir "READ-BEFORE-INSTALL.txt") -Force
+        Copy-Item (Join-Path $PSScriptRoot "post-install.txt") (Join-Path $DistDir "AFTER-INSTALL.txt") -Force
+        Write-Host "Installer: $SetupPath"
+        Write-Host "Instructions: $DistDir\READ-BEFORE-INSTALL.txt"
+        Write-Host "              $DistDir\AFTER-INSTALL.txt"
     }
 }

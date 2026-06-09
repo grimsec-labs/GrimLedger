@@ -1,6 +1,9 @@
 build/
 build-android/
 build-android-*/
+build-linux/
+build-macos/
+build-verify/
 cmake-build-*/
 dist/
 docs/
@@ -13,3 +16,6 @@ local.properties
 *.grimbak
 .vs/
 .vscode/
+*.user
+CMakeCache.txt
+CMakeFiles/

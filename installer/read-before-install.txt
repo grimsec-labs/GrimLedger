@@ -1,0 +1,66 @@
+ ███  ████  ███ █   █     ████ █████  ███     █      ███  ████   ████ 
+█     █   █  █  ██ ██    █     █     █        █     █   █ █   █ █     
+█  ██ ████   █  █ █ █     ███  ████  █        █     █████ ████   ███  
+█   █ █  █   █  █   █        █ █     █        █     █   █ █   █     █ 
+ ███  █   █ ███ █   █    ████  █████  ███     █████ █   █ ████  ████  
+
+                    >>> GrimLedger — Read Before Install <<<
+
+WHAT YOU ARE INSTALLING
+-----------------------
+GrimLedger is a local-first encrypted Markdown vault and credential manager.
+No cloud accounts. No online sync. Your vault stays on your machine.
+
+
+SYSTEM REQUIREMENTS
+-------------------
+  • Windows 10 or later (64-bit)
+  • No administrator rights required (per-user install)
+  • ~150 MB disk space for the application
+  • Optional: Chrome or Edge for the browser fill bridge
+
+
+WHAT THIS SETUP INSTALLS
+------------------------
+  Application + Qt runtime:
+    %LOCALAPPDATA%\GrimLedger\app\
+
+  Browser extension files (load unpacked):
+    %LOCALAPPDATA%\GrimLedger\browser-extension\
+
+  Start Menu shortcut:
+    GrimLedger
+
+  Vault database (created on first run, not removed by uninstall):
+    %APPDATA%\GrimLedger\vault.grim
+
+
+BEFORE YOU CONTINUE
+-------------------
+  [ ] You understand your master password cannot be recovered if lost.
+  [ ] You have a safe place to store your master password.
+  [ ] You are installing on a computer you trust.
+  [ ] (Optional) You plan to load the browser extension after setup.
+
+
+SECURITY NOTES
+--------------
+  • Notes and credentials are encrypted on disk with your master password.
+  • Exported .md files are plaintext — export only when you intend to.
+  • The browser bridge is opt-in and disabled until you enable it in Settings.
+  • SmartScreen may warn on unsigned installers — that is normal for indie builds.
+
+
+AFTER SETUP
+-----------
+  1. Launch GrimLedger and create or unlock your vault.
+  2. Load the browser extension from the folder shown at the end of setup.
+  3. Enable the browser bridge in GrimLedger Settings and save.
+  4. Keep GrimLedger unlocked while using the extension to fill logins.
+
+  Full notes are saved as INSTALL.txt in the app folder.
+
+
+grimsec-labs  ·  https://github.com/grimsec-labs/GrimLedger
+
+Click Next to install.

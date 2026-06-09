@@ -30,6 +30,7 @@ WizardStyle=modern
 PrivilegesRequired=lowest
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\{#MyAppExeName}
+InfoBeforeFile=..\installer\read-before-install.txt
 InfoAfterFile=..\installer\post-install.txt
 
 [Languages]
@@ -43,6 +44,7 @@ Name: "openextfolder"; Description: "Open the browser extension folder when fini
 Source: "{#StageDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "install.ps1,README.md,browser-extension\*"
 Source: "{#StageDir}\browser-extension\*"; DestDir: "{localappdata}\GrimLedger\browser-extension"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#StageDir}\README.md"; DestDir: "{app}"; Flags: ignoreversion; DestName: "INSTALL.txt"
+Source: "..\installer\read-before-install.txt"; DestDir: "{app}"; Flags: ignoreversion; DestName: "READ-BEFORE-INSTALL.txt"
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"

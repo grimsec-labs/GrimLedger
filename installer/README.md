@@ -27,6 +27,15 @@ From repo root:
 
 Output: **`dist\GrimLedger-Setup.exe`**
 
+Also copied next to the installer in `dist\`:
+
+| File | When to read |
+|------|----------------|
+| `READ-BEFORE-INSTALL.txt` | Before running Setup.exe |
+| `AFTER-INSTALL.txt` | After setup (browser bridge steps) |
+
+The same text is shown inside the Setup wizard and saved in the app folder after install.
+
 Stage only (no Setup.exe):
 
 ```powershell
@@ -43,6 +52,8 @@ Stage only (no Setup.exe):
 | Native messaging host | Registered if you paste extension ID in the wizard |
 
 Per-user install (`PrivilegesRequired=lowest`) — no admin required.
+
+Before installation, Setup.exe shows **READ BEFORE INSTALL** (requirements, security notes, install locations). After setup, a short browser-bridge checklist is shown. Both files are also copied to the app folder as `READ-BEFORE-INSTALL.txt` and the post-install notes reference `INSTALL.txt`.
 
 ## After running Setup.exe
 
