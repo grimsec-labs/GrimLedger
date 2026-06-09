@@ -1,4 +1,5 @@
-´´´
+<p align="center">
+<pre>
           _____                    _____                    _____  
          /\    \                  /\    \                  /\    \ 
         /::\    \                /::\    \                /::\____\
@@ -36,8 +37,9 @@
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠱⡄⠀
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢰⠀
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡄
+</pre>
+</p>
 
-´´´
 # GrimLedger
 
 **GrimLedger** is a local-first, password-protected encrypted Markdown note manager with a dark infernal / hacker aesthetic. It is designed for programmers, cybersecurity students, and power users who want to store Markdown notes, code snippets, terminal commands, and research behind a single master password.
