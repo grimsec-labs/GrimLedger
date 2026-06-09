@@ -56,8 +56,6 @@ inline bool sharesHardLink(const QString& a, const QString& b) {
     CloseHandle(hb);
     return ok;
 #else
-    // GL-SEC-014: POSIX hardlink identity — two paths share storage iff they have the
-    // same device id and inode number.
     struct stat sa {};
     struct stat sb {};
     if (::stat(a.toLocal8Bit().constData(), &sa) != 0

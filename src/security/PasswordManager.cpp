@@ -48,9 +48,6 @@ PasswordManager::StrengthResult PasswordManager::evaluate(const QString& passwor
 }
 
 bool PasswordManager::isValidVaultPassword(const QString& password, QString* errorOut) {
-    // GL-SEC-013: raise the enforced floor for the single secret protecting the whole
-    // vault. This gates vault creation and password changes only; it never blocks
-    // unlocking an existing vault, so older 8-char vaults still open.
     constexpr int kMinVaultPasswordLength = 12;
     if (password.size() < kMinVaultPasswordLength) {
         if (errorOut) {

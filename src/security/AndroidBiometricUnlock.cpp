@@ -44,8 +44,6 @@ bool isPlatformSupported() {
         androidContext());
 }
 
-// Non-secret marker only. The wrapped vault key itself lives exclusively in
-// Keystore-backed EncryptedSharedPreferences on the Java side (see GL-SEC-002).
 static const QString kEnabledKey = QStringLiteral("security/androidBiometricEnabled");
 
 bool isConfigured() {
@@ -74,9 +72,6 @@ bool enable(const QByteArray& vaultKey, const QString& masterPassword) {
     env->SetByteArrayRegion(keyArray, 0, vaultKey.size(),
         reinterpret_cast<const jbyte*>(vaultKey.constData()));
 
-    // storeVaultKey writes the key into Keystore-backed EncryptedSharedPreferences
-    // and returns a boolean. The key is never returned to native code or persisted
-    // in QSettings.
     const jboolean stored = QJniObject::callStaticMethod<jboolean>(
         "org/grimseclabs/grimledger/GrimLedgerBiometricUnlock",
         "storeVaultKey",
@@ -105,8 +100,6 @@ bool tryUnlock(QByteArray& vaultKeyOut) {
         return false;
     }
 
-    // Read the key from Keystore-backed storage only. Returns null if the OS
-    // user-authentication requirement is not currently satisfied.
     const QJniObject bytes = QJniObject::callStaticObjectMethod(
         "org/grimseclabs/grimledger/GrimLedgerBiometricUnlock",
         "loadVaultKey",

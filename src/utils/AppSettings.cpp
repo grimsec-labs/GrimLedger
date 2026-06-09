@@ -4,8 +4,6 @@
 
 namespace {
 
-// GL-SEC-005: the failed-unlock counter is persisted (not a process-lifetime static)
-// so the opt-in self-destruct cannot be bypassed by simply restarting the app.
 constexpr auto kFailedAttemptsKey = "security/failedUnlockAttempts";
 
 } // namespace

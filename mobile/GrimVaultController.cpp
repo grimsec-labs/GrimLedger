@@ -31,9 +31,6 @@ GrimVaultController::GrimVaultController(QObject* parent)
     , m_notes(m_db)
     , m_credentials(m_db) {
     if (!m_db.open(Database::defaultVaultPath())) {
-        // Do not proceed silently with a closed DB handle (downstream repository
-        // use would dereference a null sqlite3*). Surface it; the UI reports a
-        // locked/unavailable vault via vaultExists()/unlock() returning false.
         qWarning("GrimVaultController: failed to open vault database at %s",
                  qPrintable(Database::defaultVaultPath()));
     }

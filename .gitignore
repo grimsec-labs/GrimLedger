@@ -3,6 +3,7 @@ build-android/
 build-android-*/
 cmake-build-*/
 dist/
+docs/
 *.log
 local.properties
 .gradle/

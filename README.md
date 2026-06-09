@@ -254,10 +254,8 @@ GrimLedger/
     utils/       — TimeUtils, SecureStringUtils, ImageSanitizer
   resources/
     styles/grimledger_dark.qss
-  docs/
-    ANDROID.md, GITHUB_MIGRATION.md
   installer/
-    build-android.ps1, build-release.ps1, grimledger.iss
+    build-linux.sh, build-macos.sh, build-release.ps1, grimledger.iss
 ```
 
 ---
