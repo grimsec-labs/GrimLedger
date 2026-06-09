@@ -1,8 +1,0 @@
-set(__QT_DEPLOY_TARGET_grimledger_core_FILE D:/Dev/repos/grimsec_labs/GrimLedger/build-android-fresh/core/libgrimledger_core.a)
-set(__QT_DEPLOY_TARGET_grimledger_core_TYPE STATIC_LIBRARY)
-set(__QT_DEPLOY_TARGET_GrimLedgerMobile_FILE D:/Dev/repos/grimsec_labs/GrimLedger/build-android-fresh/mobile/libGrimLedger_arm64-v8a.so)
-set(__QT_DEPLOY_TARGET_GrimLedgerMobile_TYPE MODULE_LIBRARY)
-set(__QT_DEPLOY_TARGET_sodium_FILE D:/Dev/repos/grimsec_labs/GrimLedger/build-android-fresh/libsodium.a)
-set(__QT_DEPLOY_TARGET_sodium_TYPE STATIC_LIBRARY)
-set(__QT_DEPLOY_TARGET_sqlite3_static_FILE D:/Dev/repos/grimsec_labs/GrimLedger/build-android-fresh/libsqlite3_static.a)
-set(__QT_DEPLOY_TARGET_sqlite3_static_TYPE STATIC_LIBRARY)
