@@ -1,31 +1,65 @@
-# GrimLedger Browser Bridge (Phase B)
+# GrimLedger Bridge (Phase B)
 
-Connects Chrome/Edge to the unlocked GrimLedger desktop app via native messaging.
+Connects Chromium browsers (Chrome, Edge, Opera, Brave) to the unlocked GrimLedger desktop app via native messaging.
+
+**Store extension ID:** `ldehlncibafipkfjhfkihkonmcllhjen` (fixed via `manifest.json` `key` field)
 
 ## Setup
 
-### Option A — Windows Setup.exe (recommended)
+### Option A — Chrome Web Store (recommended when published)
 
-1. Build: `.\installer\build-installer.ps1` from repo root (requires Inno Setup 6).
-2. Run `dist\GrimLedger-Setup.exe` and follow the wizard.
-3. Load unpacked extension from the folder the installer opens.
+1. Install GrimLedger desktop ([Windows Setup.exe](../installer/README.md) or [Linux install](../installer/README-linux.md)).
+2. Install **GrimLedger Bridge** from the Chrome Web Store (link TBD after publication — see [STORE_LISTING.md](STORE_LISTING.md)).
+3. Run the desktop installer’s native-host step (pre-filled with the store extension ID on Windows/Linux/macOS).
 4. In GrimLedger **Settings**, enable **browser bridge** and click **Save Settings**.
 
-### Option B — Developer / manual
+### Option B — Windows Setup.exe (unpacked until store is live)
 
-1. Build GrimLedger (`grimledger_host.exe` next to `GrimLedger.exe` — e.g. `build/` on MinGW or `build/Release/` on MSVC).
-2. In Chrome, open `chrome://extensions`, enable **Developer mode**, **Load unpacked** → select this `browser-extension` folder.
-3. Copy the extension ID from the extensions page.
-4. From repo root (PowerShell):
+1. Build: `.\installer\build-installer.ps1` from repo root (requires Inno Setup 6).
+2. Run `dist\GrimLedger-Setup.exe` and follow the wizard (extension ID pre-filled).
+3. Load unpacked extension from the folder the installer opens, **or** use the store ID with unpacked load from the same folder.
+4. In GrimLedger **Settings**, enable **browser bridge** and click **Save Settings**.
+
+### Option C — Linux / macOS install
+
+1. Build and run `install.sh` from `dist/GrimLedger-linux` or `dist/GrimLedger-macos`.
+2. **Do not use sudo** — installs per-user under `~/.local` or `~/Library`.
+3. Load unpacked from **`~/GrimLedger-browser-extension`** (symlink created by install) or the path printed by the installer.
+4. Press Enter at the native-host prompt to accept the default store extension ID.
+5. Enable browser bridge in Settings.
+
+### Option D — Developer / manual
+
+1. Build GrimLedger (`grimledger_host` next to the app binary).
+2. Load unpacked → select this `browser-extension` folder (extension ID will be `ldehlncibafipkfjhfkihkonmcllhjen` because of the manifest `key`).
+3. Register native host:
 
 ```powershell
-.\native-host\install-windows.ps1 -ExtensionId YOUR_EXTENSION_ID_HERE
+# Windows
+.\native-host\install-windows.ps1 -ExtensionId ldehlncibafipkfjhfkihkonmcllhjen
 ```
 
-5. In GrimLedger **Settings → Save Settings** after enabling **browser bridge** (disabled by default).
-6. Unlock GrimLedger and keep it running. The bridge restarts after each unlock.
-7. Add vault keys with an exact **URL** origin (scheme + host + port). Enable **Allow subdomains** only when needed.
-8. On a login page, open the GrimLedger extension popup and click a match to fill.
+```bash
+# Linux
+./native-host/install-linux.sh --extension-id ldehlncibafipkfjhfkihkonmcllhjen --browser all
+```
+
+```bash
+# macOS
+./native-host/install-macos.sh --extension-id ldehlncibafipkfjhfkihkonmcllhjen
+```
+
+## Packaging for the store
+
+```bash
+./installer/package-extension.sh    # → dist/grimledger-bridge-1.0.0.zip
+```
+
+See [STORE_LISTING.md](STORE_LISTING.md) and [PRIVACY.md](PRIVACY.md).
+
+## Firefox
+
+Not supported in v1. See [installer/README-firefox.md](../installer/README-firefox.md).
 
 ## Security
 
@@ -40,6 +74,15 @@ Connects Chrome/Edge to the unlocked GrimLedger desktop app via native messaging
 
 ## Troubleshooting
 
-- `Specified native messaging host not found` → re-run `install-windows.ps1` with the correct extension ID.
+### Linux / Kali
+
+- **`Specified native messaging host not found`** — You likely ran `install.sh` with `sudo`. Reinstall as your normal user (not root). Chrome reads manifests from `~/.config/...`, not `/root/.config/...`.
+- **Cannot pick extension folder** — Use `~/GrimLedger-browser-extension` (symlink from install) instead of navigating into hidden `.local` folders. In the file picker, Ctrl+H shows hidden files.
+- **Native host not found after install** — Re-run with explicit paths:
+  `~/.local/share/GrimLedger/app/native-host/install-linux.sh --extension-id ldehlncibafipkfjhfkihkonmcllhjen --host-exe ~/.local/share/GrimLedger/app/grimledger_host --browser all`
+
+### General
+
+- `Specified native messaging host not found` → re-run native-host install with extension ID `ldehlncibafipkfjhfkihkonmcllhjen`.
 - `Vault is locked` → unlock GrimLedger.
 - No matches → ensure the vault key URL host matches the page (e.g. `github.com`).

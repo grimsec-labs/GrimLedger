@@ -5,6 +5,7 @@
 #define MyAppVersion "1.0.0"
 #define MyAppPublisher "grimsec-labs"
 #define MyAppURL "https://github.com/grimsec-labs/GrimLedger"
+#define StoreExtensionId "ldehlncibafipkfjhfkihkonmcllhjen"
 #define MyAppExeName "GrimLedger.exe"
 #define StageDir "..\dist\GrimLedger"
 
@@ -68,12 +69,13 @@ begin
   ExtensionIdPage := CreateInputQueryPage(wpSelectTasks,
     'Browser extension', 'Native messaging host (optional)',
     'After setup:' + #13#10 +
-    '1. Chrome or Edge → chrome://extensions' + #13#10 +
-    '2. Enable Developer mode → Load unpacked' + #13#10 +
-    '3. Select the extension folder (opened for you if checked below)' + #13#10 +
-    '4. Paste the 32-character extension ID here to register the native host' + #13#10 +
-    '   (or leave blank and run native-host\install-windows.ps1 later)');
+    '1. Install GrimLedger Bridge from the Chrome Web Store when available,' + #13#10 +
+    '   or load unpacked from the extension folder opened below.' + #13#10 +
+    '2. The store extension ID is pre-filled below for native-host registration.' + #13#10 +
+    '   (Unpacked dev builds use the same ID when manifest.json includes the public key.)' + #13#10 +
+    '3. Leave blank only if you will run native-host\install-windows.ps1 later.');
   ExtensionIdPage.Add('Extension ID (optional):', False);
+  ExtensionIdPage.Values[0] := '{#StoreExtensionId}';
 end;
 
 function IsValidExtensionId(const Id: string): Boolean;

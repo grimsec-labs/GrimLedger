@@ -19,3 +19,5 @@ local.properties
 *.user
 CMakeCache.txt
 CMakeFiles/
+browser-extension/.extension-private.pem
+browser-extension/.extension-key.b64

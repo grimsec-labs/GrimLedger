@@ -42,15 +42,23 @@ Installs `GrimLedger.app` to `~/Applications/` and copies browser-extension file
 
 ## Browser bridge
 
-1. Load unpacked extension from `~/Library/Application Support/GrimLedger/browser-extension/`.
-2. Copy the extension ID from `chrome://extensions`.
-3. Register the native host:
+1. Load unpacked from **`~/GrimLedger-browser-extension`** (symlink) or `~/Library/Application Support/GrimLedger/browser-extension/`.
+2. Store extension ID: **`ldehlncibafipkfjhfkihkonmcllhjen`**
+3. `install.sh` prompts for the extension ID and registers the native host by default. Manual re-run:
 
 ```bash
 ~/Library/Application\ Support/GrimLedger/native-host/install-macos.sh \
-  --extension-id YOUR_EXTENSION_ID \
+  --extension-id ldehlncibafipkfjhfkihkonmcllhjen \
   --host-exe ~/Library/Application\ Support/GrimLedger/native-host/grimledger_host
 ```
+
+4. Enable **browser bridge** in GrimLedger Settings → Save Settings.
+
+When the Chrome Web Store listing is live, install the extension from the store instead of loading unpacked.
+
+## Firefox
+
+Not supported yet. See [README-firefox.md](README-firefox.md).
 
 ## Vault location
 

@@ -10,22 +10,50 @@ usage() {
   exit 1
 }
 
+read_store_extension_id() {
+  local id_file
+  for id_file in \
+    "$SCRIPT_DIR/extension-id.txt" \
+    "$SCRIPT_DIR/../installer/extension-id.txt" \
+    "$HOME/Library/Application Support/GrimLedger/native-host/extension-id.txt"; do
+    if [[ -f "$id_file" ]]; then
+      tr -d '[:space:]' < "$id_file"
+      return 0
+    fi
+  done
+  return 1
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --host-exe) HOST_EXE="$2"; shift 2 ;;
     --extension-id) EXTENSION_ID="$2"; shift 2 ;;
     --browser) BROWSER="$2"; shift 2 ;;
+    -h|--help) usage ;;
     *) usage ;;
   esac
 done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 if [[ -z "$HOST_EXE" ]]; then
-  if [[ -x "$SCRIPT_DIR/../build/grimledger_host" ]]; then
+  if [[ -x "$SCRIPT_DIR/grimledger_host" ]]; then
+    HOST_EXE="$SCRIPT_DIR/grimledger_host"
+  elif [[ -x "$SCRIPT_DIR/../grimledger_host" ]]; then
+    HOST_EXE="$SCRIPT_DIR/../grimledger_host"
+  elif [[ -x "$SCRIPT_DIR/../build/grimledger_host" ]]; then
     HOST_EXE="$SCRIPT_DIR/../build/grimledger_host"
   else
-    echo "Native host not found. Build GrimLedger first."
+    echo "Native host not found. Build GrimLedger first or pass --host-exe." >&2
     exit 1
+  fi
+fi
+
+if [[ -z "$EXTENSION_ID" ]]; then
+  if EXTENSION_ID="$(read_store_extension_id)" && [[ "$EXTENSION_ID" =~ ^[a-p]{32}$ ]]; then
+    :
+  else
+    usage
   fi
 fi
 
@@ -70,3 +98,4 @@ esac
 echo "Installed native messaging host."
 echo "  Host: $INSTALL_DIR/grimledger_host"
 echo "  Manifest: $MANIFEST_OUT"
+echo "  Extension origin: $ORIGIN"

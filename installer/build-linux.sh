@@ -98,6 +98,7 @@ cp -r "$REPO_ROOT/browser-extension" "$OUT_DIR/"
 mkdir -p "$OUT_DIR/native-host"
 cp -r "$REPO_ROOT/native-host/." "$OUT_DIR/native-host/"
 cp "$SCRIPT_DIR/install-linux.sh" "$OUT_DIR/install.sh"
+cp "$SCRIPT_DIR/extension-id.txt" "$OUT_DIR/"
 cp "$SCRIPT_DIR/README-linux.md" "$OUT_DIR/README.txt"
 
 if [[ "$BUNDLE_QT" == "auto" ]]; then

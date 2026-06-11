@@ -1,5 +1,6 @@
 {
   "manifest_version": 3,
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAx3qBgBjg1qhj53y3NmpWp2nheQZOJPpNj0Ue+rbR4x87rfes8jP3COOBAlweliUXUcLxTKC0OzlgkDN2e583ZEaD8353gHM2nnT4xOPPt9/xA94G4KGaUUmCWJXCRQ3OPbDyk85pIm/HnjJtB4k7efaQiyBTI/01Gdo1rBtAyJSHjUylT8PMuoQTjyMbq2y6B1fhQJADxzM9j+TYgSetvOaGdx2KyVD0mSQte0+jJ4ITxrkn9GOm8+uueoSePef+rBXscbVUnwnLf/SU3Cso6e39rmTmq5Zu41HeQ1EdxjKvGNkl2kVFjR/hJcopDDHo2sKhwxXsffLLGQNWw7eHswIDAQAB",
   "name": "GrimLedger Bridge",
   "version": "1.0.0",
   "description": "Fill logins from GrimLedger vault keys via native messaging.",

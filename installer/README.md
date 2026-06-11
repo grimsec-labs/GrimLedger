@@ -49,7 +49,7 @@ Stage only (no Setup.exe):
 | GrimLedger + Qt runtime | `%LOCALAPPDATA%\GrimLedger\app\` |
 | Browser extension files | `%LOCALAPPDATA%\GrimLedger\browser-extension\` |
 | Start Menu shortcut | `GrimLedger` |
-| Native messaging host | Registered if you paste extension ID in the wizard |
+| Native messaging host | Registered with store extension ID (pre-filled in wizard) |
 
 Per-user install (`PrivilegesRequired=lowest`) — no admin required.
 
@@ -57,9 +57,10 @@ Before installation, Setup.exe shows **READ BEFORE INSTALL** (requirements, secu
 
 ## After running Setup.exe
 
-1. Load unpacked extension from the folder the wizard opens
-2. Enable browser bridge in GrimLedger Settings → **Save Settings**
-3. Keep GrimLedger unlocked while filling logins
+1. Install **GrimLedger Bridge** from the Chrome Web Store when available, or load unpacked from the folder the wizard opens
+2. Native messaging host is registered automatically if you kept the pre-filled extension ID
+3. Enable browser bridge in GrimLedger Settings → **Save Settings**
+4. Keep GrimLedger unlocked while filling logins
 
 ## Manual / developer install
 
@@ -83,6 +84,23 @@ Unsigned `Setup.exe` may trigger SmartScreen warnings. For distribution outside 
 signtool sign /fd SHA256 /a /tr http://timestamp.digicert.com /td SHA256 dist\GrimLedger-Setup.exe
 ```
 
-## Future: Chrome Web Store
+## Chrome Web Store extension
 
-Publishing the extension gives a fixed ID so the installer can register the native host without user input. Option 2 (unpacked) is used until then.
+**Extension ID:** `ldehlncibafipkfjhfkihkonmcllhjen` (fixed via manifest public key in `browser-extension/manifest.json`)
+
+**Store URL:** TBD after publication — see [browser-extension/STORE_LISTING.md](../browser-extension/STORE_LISTING.md)
+
+Package for upload:
+
+```powershell
+.\installer\package-extension.ps1
+# → dist\grimledger-bridge-1.0.0.zip
+```
+
+Privacy policy for the listing: [browser-extension/PRIVACY.md](../browser-extension/PRIVACY.md)
+
+Windows Setup.exe and `install.ps1` default to the store extension ID for native-host registration. Linux/macOS `install.sh` prompts with the same default.
+
+**Opera / Edge:** Install from the Chrome Web Store (Opera: enable Chrome extensions). Native host: Windows via `install-windows.ps1`; Linux via `install-linux.sh --browser all`.
+
+**Firefox:** Deferred — see [README-firefox.md](README-firefox.md).

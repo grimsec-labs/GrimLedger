@@ -124,6 +124,7 @@ Copy-Item (Join-Path $RepoRoot "native-host\*") $NativeDst -Recurse
 
 Copy-Item (Join-Path $PSScriptRoot "install.ps1") $OutDir
 Copy-Item (Join-Path $PSScriptRoot "README.md") $OutDir
+Copy-Item (Join-Path $PSScriptRoot "extension-id.txt") $OutDir -ErrorAction SilentlyContinue
 
 $BuildSetup = $SetupExe -or (-not $StageOnly)
 if ($BuildSetup) {

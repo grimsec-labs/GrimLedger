@@ -24,6 +24,19 @@ if (-not (Test-Path $HostExe)) {
 }
 $HostExe = (Resolve-Path $HostExe).Path
 
+if (-not $ExtensionId) {
+    $idCandidates = @(
+        (Join-Path $PSScriptRoot "extension-id.txt"),
+        (Join-Path (Split-Path $PSScriptRoot -Parent) "installer\extension-id.txt")
+    )
+    foreach ($idFile in $idCandidates) {
+        if (Test-Path $idFile) {
+            $ExtensionId = (Get-Content $idFile -Raw).Trim()
+            break
+        }
+    }
+}
+
 if (-not $ExtensionId -or $ExtensionId -notmatch '^[a-p]{32}$') {
     Write-Host "A valid 32-character Chrome extension ID is required."
     Write-Host "Load browser-extension/ as unpacked in Chrome, then copy the ID from chrome://extensions"
