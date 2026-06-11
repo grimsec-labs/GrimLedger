@@ -1,31 +1,77 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import Theme 1.0
+import controls 1.0
 
 ScrollView {
+    id: settingsRoot
     anchors.fill: parent
+    clip: true
+
     ColumnLayout {
-        width: parent.width
-        anchors.margins: 16
-        spacing: 12
+        width: settingsRoot.width - Theme.spacingMd * 2
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.margins: Theme.spacingMd
+        spacing: Theme.spacingMd
 
-        Label { text: "Vault Settings"; color: "#cc2200"; font.pixelSize: 18; font.bold: true }
+        GrimSectionLabel {
+            text: "Appearance"
+            Layout.fillWidth: true
+        }
 
-        CheckBox {
+        Label {
+            text: "Accent color"
+            color: Theme.textMuted
+            font.family: Theme.uiFont
+            font.pixelSize: 13
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: Theme.spacingSm
+
+            Repeater {
+                model: Theme.accentPresets
+                delegate: Rectangle {
+                    Layout.preferredWidth: Theme.touchTarget
+                    Layout.preferredHeight: 36
+                    radius: Theme.radiusSmall
+                    color: modelData.hex
+                    border.color: vault.accentColor === modelData.hex ? Theme.textBright : Theme.borderInfernal
+                    border.width: vault.accentColor === modelData.hex ? 2 : 1
+
+                    TapHandler {
+                        onTapped: vault.accentColor = modelData.hex
+                    }
+                }
+            }
+        }
+
+        GrimSectionLabel {
+            text: "Editor"
+            Layout.fillWidth: true
+            Layout.topMargin: Theme.spacingSm
+        }
+
+        GrimCheckBox {
             id: lineNumbersCheck
             text: "Show line numbers"
             checked: vault.lineNumbers()
         }
-        CheckBox {
+
+        GrimCheckBox {
             id: wordWrapCheck
             text: "Word wrap in editor"
             checked: vault.wordWrap()
         }
-        CheckBox {
+
+        GrimCheckBox {
             id: autoLockCheck
             text: "Auto-lock after inactivity"
             checked: true
         }
+
         SpinBox {
             id: autoLockSpin
             from: 1
@@ -33,26 +79,27 @@ ScrollView {
             value: 15
         }
 
-        Label {
+        GrimSectionLabel {
             text: "Biometric unlock"
-            color: "#cc2200"
-            font.bold: true
             visible: vault.biometricSupported
+            Layout.fillWidth: true
+            Layout.topMargin: Theme.spacingSm
         }
+
         RowLayout {
             Layout.fillWidth: true
             visible: vault.biometricSupported
-            spacing: 8
-            TextField {
+            spacing: Theme.spacingSm
+
+            GrimTextField {
                 id: biometricPasswordField
                 visible: vault.biometricSupported && !vault.biometricConfigured
-                echoMode: TextInput.Password
-                placeholderText: "Password to enable biometric"
+                passwordMode: true
                 Layout.fillWidth: true
-                color: "#e8e8ec"
-                background: Rectangle { color: "#111114"; border.color: "#331111"; radius: 3 }
+                placeholderText: "Password to enable biometric"
             }
-            Button {
+
+            GrimButton {
                 text: vault.biometricConfigured ? "Disable biometric" : "Enable biometric"
                 onClicked: {
                     if (vault.biometricConfigured) {
@@ -67,8 +114,10 @@ ScrollView {
 
         RowLayout {
             Layout.fillWidth: true
-            spacing: 8
-            Button {
+            spacing: Theme.spacingSm
+            Layout.topMargin: Theme.spacingSm
+
+            GrimButton {
                 text: "Reset to Defaults"
                 onClicked: {
                     vault.resetSettings()
@@ -76,8 +125,12 @@ ScrollView {
                     wordWrapCheck.checked = vault.wordWrap()
                 }
             }
-            Button {
+
+            Item { Layout.fillWidth: true }
+
+            GrimButton {
                 text: "Save Settings"
+                primary: true
                 onClicked: vault.saveSettings(
                     lineNumbersCheck.checked,
                     wordWrapCheck.checked,
@@ -86,9 +139,11 @@ ScrollView {
             }
         }
 
-        Button {
+        GrimButton {
             text: "Lock Vault"
+            primary: true
             Layout.fillWidth: true
+            Layout.topMargin: Theme.spacingSm
             onClicked: vault.lock()
         }
     }

@@ -1,23 +1,38 @@
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Layouts
+import Theme 1.0
+import controls 1.0
 
 Item {
     ListView {
+        id: credentialList
         anchors.fill: parent
-        anchors.margins: 12
+        anchors.margins: Theme.spacingMd
         model: vault.credentialSummaries()
         clip: true
-        delegate: Frame {
-            width: ListView.view.width
-            padding: 8
-            background: Rectangle { color: "#0e0e12"; border.color: "#331111"; radius: 4 }
-            ColumnLayout {
-                width: parent.width
-                Label { text: modelData.label; color: "#cc2200"; font.bold: true }
-                Label { text: modelData.username; color: "#d4d4dc"; font.family: "monospace" }
-                Label { text: modelData.url; color: "#998877"; elide: Text.ElideRight; Layout.fillWidth: true }
-            }
+        spacing: Theme.spacingXs
+
+        background: Rectangle {
+            color: Theme.listBackground
+            border.color: Theme.border
+            border.width: 1
+            radius: Theme.radiusSmall
         }
+
+        delegate: GrimListItem {
+            width: ListView.view.width
+            text: modelData.label
+            subtitle: modelData.username + (modelData.url ? " · " + modelData.url : "")
+            subtitleMonospace: true
+        }
+    }
+
+    Label {
+        anchors.centerIn: parent
+        visible: credentialList.count === 0
+        text: "> no vault keys"
+        color: Theme.textDim
+        font.family: Theme.monoFont
+        font.pixelSize: 13
     }
 }

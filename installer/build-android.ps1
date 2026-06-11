@@ -8,6 +8,42 @@ param(
 $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 
+function Ensure-AndroidDevPath {
+    $Sdk = $env:ANDROID_SDK_ROOT
+    if (-not $Sdk) { $Sdk = "$env:LOCALAPPDATA\Android\Sdk" }
+    $env:ANDROID_SDK_ROOT = $Sdk
+
+    $PlatformTools = Join-Path $Sdk "platform-tools"
+    if (Test-Path $PlatformTools) {
+        if ($env:Path -notlike "*$PlatformTools*") {
+            $env:Path = "$PlatformTools;$env:Path"
+        }
+    }
+
+    if (-not $env:JAVA_HOME) {
+        $JavaCandidates = @(
+            "$env:ProgramFiles\Android\Android Studio\jbr",
+            "$env:ProgramFiles\Android\Android Studio\jre",
+            "${env:ProgramFiles(x86)}\Android\Android Studio\jbr"
+        )
+        foreach ($candidate in $JavaCandidates) {
+            if (Test-Path (Join-Path $candidate "bin\java.exe")) {
+                $env:JAVA_HOME = $candidate
+                break
+            }
+        }
+    }
+
+    if ($env:JAVA_HOME) {
+        $JavaBin = Join-Path $env:JAVA_HOME "bin"
+        if ($env:Path -notlike "*$JavaBin*") {
+            $env:Path = "$JavaBin;$env:Path"
+        }
+    }
+}
+
+Ensure-AndroidDevPath
+
 if (-not $BuildDir) { $BuildDir = Join-Path $RepoRoot "build-android" }
 if (-not $QtAndroidDir) {
     $cache = Join-Path $RepoRoot "build-android\CMakeCache.txt"
@@ -33,16 +69,23 @@ if (-not (Test-Path $Ndk)) {
 if (-not (Test-Path $Ndk)) {
     throw "Android NDK not found. Install via Android Studio SDK Manager or: sdkmanager --install `"ndk;27.2.12479018`""
 }
+
+if (-not $env:JAVA_HOME) {
+    throw "JAVA_HOME is not set. Install Android Studio or a JDK, then set JAVA_HOME to its JBR/JRE folder."
+}
+
 Write-Host "Using NDK: $Ndk"
 Write-Host "Using SDK: $Sdk"
+Write-Host "Using JAVA_HOME: $env:JAVA_HOME"
 
-$env:ANDROID_SDK_ROOT = $Sdk
 $env:ANDROID_NDK_ROOT = $Ndk
 
 $Ninja = "C:\Qt\Tools\Ninja\ninja.exe"
 if (-not (Test-Path $Ninja)) { throw "Ninja not found at $Ninja" }
 
 Write-Host "Configuring Android build..."
+$PrevEap = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
 cmake -S $RepoRoot -B $BuildDir -G Ninja `
     -DCMAKE_MAKE_PROGRAM="$Ninja" `
     -DCMAKE_TOOLCHAIN_FILE="$QtAndroidDir/lib/cmake/Qt6/qt.toolchain.cmake" `
@@ -51,6 +94,8 @@ cmake -S $RepoRoot -B $BuildDir -G Ninja `
     -DANDROID_SDK_ROOT="$Sdk" `
     -DANDROID_NDK_ROOT="$Ndk" `
     -DCMAKE_BUILD_TYPE=Release
+if ($LASTEXITCODE -ne 0) { throw "CMake configure failed with exit code $LASTEXITCODE" }
+$ErrorActionPreference = $PrevEap
 
 cmake --build $BuildDir --config Release
 
@@ -83,4 +128,7 @@ if ($ApkFromCmake) {
         --release
 }
 
-Write-Host "Output: $RepoRoot\dist\android"
+Write-Host ""
+Write-Host "Output: $DeployOutput"
+Write-Host "Signed debug APK: run .\installer\install-android.ps1 -SkipBuild"
+Write-Host "Or: .\installer\adb.ps1 install -r dist\android\GrimLedger-debug.apk (after signing)"

@@ -49,6 +49,7 @@ void GrimVaultController::setAccentColor(const QString& hex) {
         return;
     }
     m_accent = hex;
+    saveAccent(hex);
     emit accentColorChanged();
 }
 

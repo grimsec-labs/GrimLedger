@@ -1,6 +1,8 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import Theme 1.0
+import controls 1.0
 
 ApplicationWindow {
     id: root
@@ -8,12 +10,27 @@ ApplicationWindow {
     width: 400
     height: 720
     title: "GrimLedger"
-    color: "#0a0a0c"
+    color: Theme.background
+    font.family: Theme.uiFont
+
+    Binding {
+        target: Theme
+        property: "accent"
+        value: vault.accentColor
+    }
 
     StackView {
         id: stack
         anchors.fill: parent
         initialItem: loginScreen
+    }
+
+    Connections {
+        target: vault
+        function onUnlockedChanged() {
+            if (!vault.unlocked)
+                stack.replace(loginScreen)
+        }
     }
 
     Component {
@@ -31,34 +48,17 @@ ApplicationWindow {
             TabBar {
                 id: tabs
                 Layout.fillWidth: true
-                background: Rectangle { color: "#111114" }
-                TabButton {
-                    text: "Notes"
-                    contentItem: Text {
-                        text: parent.text
-                        color: parent.checked ? vault.accentColor : "#998877"
-                        horizontalAlignment: Text.AlignHCenter
-                        font.family: "monospace"
-                    }
+                implicitHeight: Theme.touchTarget
+
+                background: Rectangle {
+                    color: Theme.surfaceRaised
+                    border.bottom.color: Theme.borderInfernal
+                    border.bottom.width: 1
                 }
-                TabButton {
-                    text: "Keys"
-                    contentItem: Text {
-                        text: parent.text
-                        color: parent.checked ? vault.accentColor : "#998877"
-                        horizontalAlignment: Text.AlignHCenter
-                        font.family: "monospace"
-                    }
-                }
-                TabButton {
-                    text: "Settings"
-                    contentItem: Text {
-                        text: parent.text
-                        color: parent.checked ? vault.accentColor : "#998877"
-                        horizontalAlignment: Text.AlignHCenter
-                        font.family: "monospace"
-                    }
-                }
+
+                GrimTabButton { text: "Notes" }
+                GrimTabButton { text: "Keys" }
+                GrimTabButton { text: "Settings" }
             }
 
             StackLayout {

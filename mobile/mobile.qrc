@@ -5,6 +5,13 @@
         <file>qml/NotesScreen.qml</file>
         <file>qml/CredentialsScreen.qml</file>
         <file>qml/SettingsScreen.qml</file>
-        <file>qml/Theme.qml</file>
+        <file>qml/Theme/Theme.qml</file>
+        <file>qml/controls/GrimButton.qml</file>
+        <file>qml/controls/GrimTextField.qml</file>
+        <file>qml/controls/GrimTextArea.qml</file>
+        <file>qml/controls/GrimListItem.qml</file>
+        <file>qml/controls/GrimTabButton.qml</file>
+        <file>qml/controls/GrimSectionLabel.qml</file>
+        <file>qml/controls/GrimCheckBox.qml</file>
     </qresource>
 </RCC>

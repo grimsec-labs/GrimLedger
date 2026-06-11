@@ -1,64 +1,91 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import Theme 1.0
+import controls 1.0
 
 Item {
     id: loginRoot
     signal unlocked()
 
-    ColumnLayout {
-        anchors.centerIn: parent
-        width: Math.min(parent.width - 48, 360)
-        spacing: 16
-
-        Label {
-            text: "GRIMLEDGER"
-            font.family: "monospace"
-            font.pixelSize: 22
-            color: vault.accentColor
-            Layout.alignment: Qt.AlignHCenter
+    Rectangle {
+        anchors.fill: parent
+        gradient: Gradient {
+            orientation: Gradient.Vertical
+            GradientStop { position: 0.0; color: Theme.loginGradientStart }
+            GradientStop { position: 0.5; color: Theme.loginGradientMid }
+            GradientStop { position: 1.0; color: Theme.loginGradientEnd }
         }
+    }
 
-        Label {
-            text: "> enter master key:"
-            font.family: "monospace"
-            color: "#33cc66"
-        }
+    ScrollView {
+        anchors.fill: parent
+        clip: true
 
-        TextField {
-            id: passwordField
-            Layout.fillWidth: true
-            echoMode: TextInput.Password
-            placeholderText: "Master password"
-            color: "#e8e8ec"
-            background: Rectangle { color: "#111114"; border.color: "#331111"; radius: 3 }
-        }
+        ColumnLayout {
+            width: Math.min(loginRoot.width - Theme.spacingLg * 2, 360)
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: Theme.spacingMd
 
-        Button {
-            text: vault.vaultExists ? "Unlock Vault" : "Create Vault"
-            Layout.fillWidth: true
-            onClicked: {
-                if (vault.vaultExists) {
-                    if (vault.unlock(passwordField.text)) unlocked()
-                } else {
-                    if (vault.createVault(passwordField.text)) unlocked()
+            Label {
+                text: "GRIMLEDGER"
+                font.family: Theme.monoFont
+                font.pixelSize: 22
+                font.letterSpacing: 2
+                color: Theme.accent
+                Layout.alignment: Qt.AlignHCenter
+            }
+
+            Label {
+                text: "> enter master key:"
+                font.family: Theme.monoFont
+                font.pixelSize: 13
+                color: Theme.terminalGreen
+            }
+
+            GrimTextField {
+                id: passwordField
+                Layout.fillWidth: true
+                passwordMode: true
+                monospace: true
+                placeholderText: "Master password"
+            }
+
+            GrimButton {
+                text: vault.vaultExists ? "Unlock Vault" : "Create Vault"
+                primary: true
+                Layout.fillWidth: true
+                onClicked: {
+                    if (vault.vaultExists) {
+                        if (vault.unlock(passwordField.text))
+                            unlocked()
+                    } else {
+                        if (vault.createVault(passwordField.text))
+                            unlocked()
+                    }
                 }
             }
-        }
 
-        Button {
-            text: "Biometric unlock"
-            visible: vault.biometricSupported && vault.biometricConfigured
-            Layout.fillWidth: true
-            onClicked: { if (vault.biometricUnlock()) unlocked() }
-        }
+            GrimButton {
+                text: "Biometric unlock"
+                visible: vault.biometricSupported && vault.biometricConfigured
+                Layout.fillWidth: true
+                onClicked: {
+                    if (vault.biometricUnlock())
+                        unlocked()
+                }
+            }
 
-        Label {
-            id: errorLabel
-            color: "#ff4444"
-            wrapMode: Text.WordWrap
-            Layout.fillWidth: true
-            visible: text.length > 0
+            Label {
+                id: errorLabel
+                color: Theme.error
+                wrapMode: Text.WordWrap
+                font.family: Theme.uiFont
+                font.pixelSize: 13
+                Layout.fillWidth: true
+                visible: text.length > 0
+            }
         }
     }
 
