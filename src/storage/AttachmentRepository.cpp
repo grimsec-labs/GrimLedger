@@ -1,6 +1,7 @@
 #include "storage/AttachmentRepository.h"
 #include "security/CryptoManager.h"
 #include "storage/DbTransaction.h"
+#include "utils/ImageSanitizer.h"
 #include "utils/SecurityLimits.h"
 #include "utils/TimeUtils.h"
 
@@ -91,6 +92,26 @@ QList<QVariantMap> AttachmentRepository::listAllImageAttachments() const {
     }
     sqlite3_finalize(stmt);
     return out;
+}
+
+QString AttachmentRepository::mimeTypeForAttachment(const QString& attachmentId) const {
+    if (attachmentId.isEmpty())
+        return QStringLiteral("image/png");
+
+    sqlite3_stmt* stmt = nullptr;
+    const char* sql = "SELECT mime_type FROM note_attachments WHERE id = ?;";
+    if (sqlite3_prepare_v2(m_db.handle(), sql, -1, &stmt, nullptr) != SQLITE_OK)
+        return QStringLiteral("image/png");
+
+    sqlite3_bind_text(stmt, 1, attachmentId.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+    QString mime = QStringLiteral("image/png");
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        const char* val = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        if (val && val[0])
+            mime = QString::fromUtf8(val);
+    }
+    sqlite3_finalize(stmt);
+    return mime;
 }
 
 bool AttachmentRepository::deleteAttachment(const QString& attachmentId, qint64 noteId) {
@@ -347,7 +368,8 @@ QString AttachmentRepository::rewriteBodyForExport(
             continue;
         }
 
-        const QString fileName = attachmentId + QStringLiteral(".png");
+        const QString ext = ImageSanitizer::extensionForMime(mimeTypeForAttachment(attachmentId));
+        const QString fileName = attachmentId + ext;
         const QString filePath = exportDir + QLatin1Char('/') + fileName;
         QFile file(filePath);
         if (!file.open(QIODevice::WriteOnly)) {

@@ -416,21 +416,19 @@ void GrimVaultController::insertImageIntoNote(qint64 noteId, const QUrl& fileUrl
     // in the clear, so we avoid leaking a potentially sensitive filename into the DB.
     const QString attachmentId = m_attachments.storeAttachment(
         noteId,
-        sanitized.pngData,
-        QStringLiteral("image/png"),
+        sanitized.data,
+        sanitized.mimeType,
         QStringLiteral("image"),
         m_session.key());
     if (attachmentId.isEmpty()) {
-        CryptoManager::secureZero(sanitized.pngData);
+        CryptoManager::secureZero(sanitized.data);
         emit errorOccurred(QStringLiteral("Could not store image in the encrypted vault."));
         return;
     }
 
-    // Build an in-memory preview from the sanitized PNG (already metadata-free) for
-    // immediate confirmation. Never logged, never written to disk.
-    const QString previewUrl = QStringLiteral("data:image/png;base64,")
-        + QString::fromLatin1(sanitized.pngData.toBase64());
-    CryptoManager::secureZero(sanitized.pngData);
+    const QString previewUrl = QStringLiteral("data:") + sanitized.mimeType
+        + QStringLiteral(";base64,") + QString::fromLatin1(sanitized.data.toBase64());
+    CryptoManager::secureZero(sanitized.data);
 
     const QString markdown = QStringLiteral("![image](%1%2)\n")
         .arg(QString::fromUtf8(AttachmentRepository::kGrimScheme), attachmentId);
@@ -445,7 +443,8 @@ QString GrimVaultController::attachmentPreviewUrl(qint64 noteId, const QString& 
     if (!data) {
         return {};
     }
-    return QStringLiteral("data:image/png;base64,") + QString::fromLatin1(data->toBase64());
+    const QString mime = m_attachments.mimeTypeForAttachment(attachmentId);
+    return QStringLiteral("data:") + mime + QStringLiteral(";base64,") + QString::fromLatin1(data->toBase64());
 }
 
 QVariantList GrimVaultController::noteImagePreviews(qint64 noteId) const {
@@ -461,8 +460,9 @@ QVariantList GrimVaultController::noteImagePreviews(qint64 noteId) const {
         entry.insert(QStringLiteral("attachmentId"), id);
         entry.insert(QStringLiteral("noteId"), noteId);
         if (data && !data->isEmpty()) {
+            const QString mime = m_attachments.mimeTypeForAttachment(id);
             entry.insert(QStringLiteral("previewUrl"),
-                         QStringLiteral("data:image/png;base64,") + QString::fromLatin1(data->toBase64()));
+                         QStringLiteral("data:") + mime + QStringLiteral(";base64,") + QString::fromLatin1(data->toBase64()));
         } else {
             entry.insert(QStringLiteral("previewUrl"), QString());
         }
@@ -492,8 +492,9 @@ QVariantList GrimVaultController::allImageAttachments() const {
             noteId,
             m_session.key());
         if (data && !data->isEmpty()) {
+            const QString mime = a.value(QStringLiteral("mimeType")).toString();
             entry.insert(QStringLiteral("previewUrl"),
-                         QStringLiteral("data:image/png;base64,") + QString::fromLatin1(data->toBase64()));
+                         QStringLiteral("data:") + mime + QStringLiteral(";base64,") + QString::fromLatin1(data->toBase64()));
         }
         out.append(entry);
     }

@@ -1744,7 +1744,8 @@ MarkdownRenderer::ImageUrlResolver MainWindow::imageResolver() const {
         if (!data) {
             return QString();
         }
-        const QString resolved = QStringLiteral("data:image/png;base64,") + data->toBase64();
+        const QString mime = m_attachments.mimeTypeForAttachment(attachmentId);
+        const QString resolved = QStringLiteral("data:") + mime + QStringLiteral(";base64,") + data->toBase64();
         m_attachmentPreviewCache.insert(cacheKey, resolved);
         return resolved;
     };
@@ -1768,7 +1769,7 @@ void MainWindow::onInsertImage() {
         QStringLiteral("insert image"),
         QString(),
         QStringLiteral("Images (*.png *.jpg *.jpeg *.bmp *.webp *.gif)"),
-        QStringLiteral("metadata purged · re-sealed as PNG · encrypted in vault"));
+        QStringLiteral("metadata purged · encrypted in vault"));
     if (path.isEmpty()) {
         return;
     }
@@ -1783,8 +1784,8 @@ void MainWindow::onInsertImage() {
     const QString baseName = QFileInfo(path).completeBaseName();
     const QString attachmentId = m_attachments.storeAttachment(
         m_currentNoteId,
-        image.pngData,
-        QStringLiteral("image/png"),
+        image.data,
+        image.mimeType,
         baseName,
         m_session.key());
     if (attachmentId.isEmpty()) {

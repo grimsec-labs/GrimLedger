@@ -27,6 +27,8 @@ public:
         qint64 noteId,
         const QByteArray& key) const;
 
+    QString mimeTypeForAttachment(const QString& attachmentId) const;
+
     QList<QVariantMap> listAttachmentsForNote(qint64 noteId) const;
 
     QList<QVariantMap> listAllImageAttachments() const;
