@@ -21,3 +21,35 @@ CMakeCache.txt
 CMakeFiles/
 browser-extension/.extension-private.pem
 browser-extension/.extension-key.b64
+
+# Build outputs
+build/
+build-*/
+build-desktop-test/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Testing/Temporary/
+
+# Ninja build files
+.ninja_deps
+.ninja_log
+build.ninja
+
+# Compiled binaries
+*.exe
+*.dll
+*.pdb
+*.obj
+*.o
+*.a
+*.lib
+*.so
+*.dylib
+*.app
+
+# Qt generated files
+*_autogen/
+moc_*.cpp
+qrc_*.cpp
