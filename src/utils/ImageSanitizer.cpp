@@ -53,8 +53,17 @@ bool sanitizeImage(const QImage& source, SanitizedImage& out, QString* error) {
         raster = raster.convertToFormat(QImage::Format_RGBA8888);
     }
 
+    // Rebuild the image from raw pixels only. convertToFormat() preserves the
+    // source's text fields (PNG tEXt/zTXt), ICC color profile, and other metadata,
+    // which QImageWriter would otherwise re-embed in the output PNG. Wrapping the
+    // raw bits in a fresh QImage and detaching with copy() yields an image that
+    // carries pixels and nothing else — no EXIF/GPS/comments/profile can survive.
+    QImage clean(raster.constBits(), raster.width(), raster.height(),
+                 raster.bytesPerLine(), raster.format());
+    clean = clean.copy();
+
     QByteArray png;
-    if (!encodePng(raster, png, error)) {
+    if (!encodePng(clean, png, error)) {
         return false;
     }
 
@@ -66,9 +75,41 @@ bool sanitizeImage(const QImage& source, SanitizedImage& out, QString* error) {
     }
 
     out.pngData = std::move(png);
-    out.width = raster.width();
-    out.height = raster.height();
+    out.width = clean.width();
+    out.height = clean.height();
     return true;
+}
+
+// Shared decode path: bound the dimensions, decode pixels only, hand off to
+// sanitizeImage which re-encodes a fresh PNG (dropping EXIF/GPS/ICC/etc.).
+bool sanitizeFromReader(QImageReader& reader, SanitizedImage& out, QString* error) {
+    reader.setAutoTransform(true);
+
+    const QSize size = reader.size();
+    if (!size.isValid()) {
+        if (error) {
+            *error = QStringLiteral("Could not read image file.");
+        }
+        return false;
+    }
+
+    if (size.width() > ImageSanitizer::kMaxDimension
+        || size.height() > ImageSanitizer::kMaxDimension) {
+        reader.setScaledSize(size.scaled(
+            ImageSanitizer::kMaxDimension, ImageSanitizer::kMaxDimension, Qt::KeepAspectRatio));
+    }
+
+    const QImage image = reader.read();
+    if (image.isNull()) {
+        if (error) {
+            *error = reader.errorString().isEmpty()
+                ? QStringLiteral("Unsupported or corrupt image file.")
+                : reader.errorString();
+        }
+        return false;
+    }
+
+    return sanitizeImage(image, out, error);
 }
 
 } // namespace
@@ -90,29 +131,33 @@ bool ImageSanitizer::sanitizeFromFile(const QString& path, SanitizedImage& out, 
     }
 
     QImageReader reader(path);
-    reader.setAutoTransform(true);
+    return sanitizeFromReader(reader, out, error);
+}
 
-    const QSize size = reader.size();
-    if (!size.isValid()) {
+bool ImageSanitizer::sanitizeFromData(const QByteArray& data, SanitizedImage& out, QString* error) {
+    if (data.isEmpty()) {
         if (error) {
-            *error = QStringLiteral("Could not read image file.");
+            *error = QStringLiteral("The selected image is empty.");
         }
         return false;
     }
 
-    if (size.width() > kMaxDimension || size.height() > kMaxDimension) {
-        reader.setScaledSize(size.scaled(kMaxDimension, kMaxDimension, Qt::KeepAspectRatio));
-    }
-
-    const QImage image = reader.read();
-    if (image.isNull()) {
+    if (data.size() > kMaxInputBytes) {
         if (error) {
-            *error = reader.errorString().isEmpty()
-                ? QStringLiteral("Unsupported or corrupt image file.")
-                : reader.errorString();
+            *error = QStringLiteral("Image file is too large.");
         }
         return false;
     }
 
-    return sanitizeImage(image, out, error);
+    QBuffer buffer;
+    buffer.setData(data);
+    if (!buffer.open(QIODevice::ReadOnly)) {
+        if (error) {
+            *error = QStringLiteral("Could not read the selected image.");
+        }
+        return false;
+    }
+
+    QImageReader reader(&buffer);
+    return sanitizeFromReader(reader, out, error);
 }

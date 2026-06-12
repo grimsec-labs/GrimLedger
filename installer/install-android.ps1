@@ -76,7 +76,9 @@ $Aligned = Join-Path $DistDir "GrimLedger-aligned.apk"
 
 $Adb = Join-Path $Sdk "platform-tools\adb.exe"
 & $Adb devices
-& $Adb install -r $SignedApk
+# Use --no-incremental: incremental installs can leave the Qt package in a corrupted
+# state (QtActivity class unloadable, versionCode reset to 0 -> "Activity does not exist").
+& $Adb install -r --no-incremental $SignedApk
 
 Write-Host ""
 Write-Host "Installed: $SignedApk"

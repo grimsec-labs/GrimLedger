@@ -18,7 +18,13 @@ TabButton {
 
     background: Rectangle {
         color: control.checked ? Theme.listItemSelectedBg : "transparent"
-        border.bottom.color: control.checked ? Theme.accent : "transparent"
-        border.bottom.width: control.checked ? 2 : 0
+        Rectangle {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            height: control.checked ? 2 : 0
+            color: Theme.accent
+            visible: control.checked
+        }
     }
 }

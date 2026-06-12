@@ -4,6 +4,7 @@
         <file>qml/LoginScreen.qml</file>
         <file>qml/NotesScreen.qml</file>
         <file>qml/CredentialsScreen.qml</file>
+        <file>qml/AlbumScreen.qml</file>
         <file>qml/SettingsScreen.qml</file>
         <file>qml/Theme/Theme.qml</file>
         <file>qml/controls/GrimButton.qml</file>

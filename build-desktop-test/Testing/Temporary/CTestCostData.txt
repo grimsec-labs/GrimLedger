@@ -1,0 +1,12 @@
+test_origin_matcher 2 0.00967265
+test_sqlite_utils 2 0.00455875
+test_bridge_auth 2 0.0174398
+test_bridge_server 2 0.0088584
+test_credential_repository 2 0.0587357
+test_note_repository 2 0.0643348
+test_vault_restore 2 0.966624
+test_totp_generator 2 0.0115323
+test_image_sanitizer 2 0.0181666
+test_attachment_refs 2 0.0992808
+test_stage_b 2 0.612533
+---

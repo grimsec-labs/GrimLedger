@@ -18,14 +18,18 @@ Item {
         }
     }
 
-    ScrollView {
+    Flickable {
         anchors.fill: parent
+        contentWidth: width
+        contentHeight: formColumn.height + Theme.spacingXl * 2
+        boundsBehavior: Flickable.StopAtBounds
         clip: true
 
         ColumnLayout {
-            width: Math.min(loginRoot.width - Theme.spacingLg * 2, 360)
-            anchors.horizontalCenter: parent.horizontalCenter
-            anchors.verticalCenter: parent.verticalCenter
+            id: formColumn
+            width: Math.min(parent.width - Theme.spacingLg * 2, 360)
+            x: (parent.width - width) / 2
+            y: Math.max((loginRoot.height - height) / 2, Theme.spacingXl)
             spacing: Theme.spacingMd
 
             Label {

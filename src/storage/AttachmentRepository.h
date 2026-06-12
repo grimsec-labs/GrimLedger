@@ -4,7 +4,9 @@
 
 #include <QByteArray>
 #include <QHash>
+#include <QList>
 #include <QString>
+#include <QVariantMap>
 #include <optional>
 
 class AttachmentRepository {
@@ -25,6 +27,12 @@ public:
         qint64 noteId,
         const QByteArray& key) const;
 
+    QList<QVariantMap> listAttachmentsForNote(qint64 noteId) const;
+
+    QList<QVariantMap> listAllImageAttachments() const;
+
+    bool deleteAttachment(const QString& attachmentId, qint64 noteId);
+
     QHash<QString, QString> duplicateAttachments(
         qint64 fromNoteId,
         qint64 toNoteId,
@@ -42,6 +50,7 @@ public:
 
     static bool isGrimAttachmentUrl(const QString& url);
     static QString attachmentIdFromUrl(const QString& url);
+    static QList<QPair<QString, QString>> extractImageRefs(const QString& markdown);
 
 private:
     Database& m_db;

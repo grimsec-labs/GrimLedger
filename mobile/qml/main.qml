@@ -52,12 +52,18 @@ ApplicationWindow {
 
                 background: Rectangle {
                     color: Theme.surfaceRaised
-                    border.bottom.color: Theme.borderInfernal
-                    border.bottom.width: 1
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        height: 1
+                        color: Theme.borderInfernal
+                    }
                 }
 
                 GrimTabButton { text: "Notes" }
                 GrimTabButton { text: "Keys" }
+                GrimTabButton { text: "Album" }
                 GrimTabButton { text: "Settings" }
             }
 
@@ -68,6 +74,7 @@ ApplicationWindow {
 
                 NotesScreen {}
                 CredentialsScreen {}
+                AlbumScreen {}
                 SettingsScreen {}
             }
         }

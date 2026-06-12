@@ -38,7 +38,13 @@ ItemDelegate {
 
     background: Rectangle {
         color: control.selected ? Theme.listItemSelectedBg : "transparent"
-        border.left.color: control.selected ? Theme.accent : "transparent"
-        border.left.width: control.selected ? 2 : 0
+        Rectangle {
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            anchors.left: parent.left
+            width: control.selected ? 2 : 0
+            color: Theme.accent
+            visible: control.selected
+        }
     }
 }

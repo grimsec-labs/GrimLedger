@@ -19,6 +19,7 @@ target_link_libraries(GrimLedgerMobile PRIVATE
     Qt6::Qml
     Qt6::Quick
     Qt6::QuickControls2
+    Qt6::QuickDialogs2
 )
 
 set_target_properties(GrimLedgerMobile PROPERTIES

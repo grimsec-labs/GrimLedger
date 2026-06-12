@@ -34,6 +34,83 @@ qint64 totalAttachmentPlaintextBytes(sqlite3* db) {
 
 } // namespace
 
+QList<QVariantMap> AttachmentRepository::listAttachmentsForNote(qint64 noteId) const {
+    QList<QVariantMap> out;
+    if (noteId <= 0) {
+        return out;
+    }
+
+    sqlite3_stmt* stmt = nullptr;
+    const char* sql =
+        "SELECT id, mime_type, original_name, created_at "
+        "FROM note_attachments WHERE note_id = ? ORDER BY created_at ASC;";
+
+    if (sqlite3_prepare_v2(m_db.handle(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        return out;
+    }
+
+    sqlite3_bind_int64(stmt, 1, noteId);
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        QVariantMap row;
+        row.insert(QStringLiteral("id"),
+                   QString::fromUtf8(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0))));
+        row.insert(QStringLiteral("mimeType"),
+                   QString::fromUtf8(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1))));
+        row.insert(QStringLiteral("name"),
+                   QString::fromUtf8(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2))));
+        row.insert(QStringLiteral("createdAt"), sqlite3_column_int64(stmt, 3));
+        row.insert(QStringLiteral("noteId"), noteId);
+        out.append(row);
+    }
+    sqlite3_finalize(stmt);
+    return out;
+}
+
+QList<QVariantMap> AttachmentRepository::listAllImageAttachments() const {
+    QList<QVariantMap> out;
+    sqlite3_stmt* stmt = nullptr;
+    const char* sql =
+        "SELECT id, note_id, mime_type, created_at "
+        "FROM note_attachments "
+        "WHERE mime_type LIKE 'image/%' "
+        "ORDER BY created_at DESC;";
+
+    if (sqlite3_prepare_v2(m_db.handle(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        return out;
+    }
+
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        QVariantMap row;
+        row.insert(QStringLiteral("id"),
+                   QString::fromUtf8(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0))));
+        row.insert(QStringLiteral("noteId"), sqlite3_column_int64(stmt, 1));
+        row.insert(QStringLiteral("mimeType"),
+                   QString::fromUtf8(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2))));
+        row.insert(QStringLiteral("createdAt"), sqlite3_column_int64(stmt, 3));
+        out.append(row);
+    }
+    sqlite3_finalize(stmt);
+    return out;
+}
+
+bool AttachmentRepository::deleteAttachment(const QString& attachmentId, qint64 noteId) {
+    if (attachmentId.isEmpty() || noteId <= 0) {
+        return false;
+    }
+
+    sqlite3_stmt* stmt = nullptr;
+    const char* sql = "DELETE FROM note_attachments WHERE id = ? AND note_id = ?;";
+    if (sqlite3_prepare_v2(m_db.handle(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        return false;
+    }
+
+    sqlite3_bind_text(stmt, 1, attachmentId.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt, 2, noteId);
+    const bool ok = sqlite3_step(stmt) == SQLITE_DONE && sqlite3_changes(m_db.handle()) > 0;
+    sqlite3_finalize(stmt);
+    return ok;
+}
+
 bool AttachmentRepository::isGrimAttachmentUrl(const QString& url) {
     return url.startsWith(QString::fromUtf8(kGrimScheme));
 }
@@ -284,4 +361,16 @@ QString AttachmentRepository::rewriteBodyForExport(
     }
 
     return result;
+}
+
+QList<QPair<QString, QString>> AttachmentRepository::extractImageRefs(const QString& markdown) {
+    QList<QPair<QString, QString>> out;
+    static const QRegularExpression re(
+        QStringLiteral(R"(!\[([^\]]*)\]\((grim://attachment/[0-9a-fA-F\-]+)\))"));
+    QRegularExpressionMatchIterator it = re.globalMatch(markdown);
+    while (it.hasNext()) {
+        const QRegularExpressionMatch m = it.next();
+        out.append({m.captured(2), attachmentIdFromUrl(m.captured(2))});
+    }
+    return out;
 }

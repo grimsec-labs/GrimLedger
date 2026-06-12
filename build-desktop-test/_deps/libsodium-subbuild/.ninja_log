@@ -1,0 +1,21 @@
+# ninja log v6
+2	74	8029534045453038	libsodium-populate-prefix/src/libsodium-populate-stamp/libsodium-populate-mkdir	d89aa040854c9ac7
+2	74	8029534045453038	D:/Dev/repos/claude_grimledger/GrimLedger/build-desktop-test/_deps/libsodium-subbuild/libsodium-populate-prefix/src/libsodium-populate-stamp/libsodium-populate-mkdir	d89aa040854c9ac7
+74	3022	8029534074939826	libsodium-populate-prefix/src/libsodium-populate-stamp/libsodium-populate-download	67a05be1253f6aaa
+74	3022	8029534074939826	D:/Dev/repos/claude_grimledger/GrimLedger/build-desktop-test/_deps/libsodium-subbuild/libsodium-populate-prefix/src/libsodium-populate-stamp/libsodium-populate-download	67a05be1253f6aaa
+3023	3148	8029534075010187	libsodium-populate-prefix/src/libsodium-populate-stamp/libsodium-populate-update	a3c4722191d0cee
+3023	3148	8029534075010187	D:/Dev/repos/claude_grimledger/GrimLedger/build-desktop-test/_deps/libsodium-subbuild/libsodium-populate-prefix/src/libsodium-populate-stamp/libsodium-populate-update	a3c4722191d0cee
+3148	3214	8029534076862352	libsodium-populate-prefix/src/libsodium-populate-stamp/libsodium-populate-patch	a299a243f4f7a2c4
+3148	3214	8029534076862352	D:/Dev/repos/claude_grimledger/GrimLedger/build-desktop-test/_deps/libsodium-subbuild/libsodium-populate-prefix/src/libsodium-populate-stamp/libsodium-populate-patch	a299a243f4f7a2c4
+3214	3282	8029534077542427	libsodium-populate-prefix/src/libsodium-populate-stamp/libsodium-populate-configure	9dac8e3047541641
+3214	3282	8029534077542427	D:/Dev/repos/claude_grimledger/GrimLedger/build-desktop-test/_deps/libsodium-subbuild/libsodium-populate-prefix/src/libsodium-populate-stamp/libsodium-populate-configure	9dac8e3047541641
+3282	3358	8029534078294226	libsodium-populate-prefix/src/libsodium-populate-stamp/libsodium-populate-build	e33b4baef50f627
+3282	3358	8029534078294226	D:/Dev/repos/claude_grimledger/GrimLedger/build-desktop-test/_deps/libsodium-subbuild/libsodium-populate-prefix/src/libsodium-populate-stamp/libsodium-populate-build	e33b4baef50f627
+3358	3422	8029534078928290	libsodium-populate-prefix/src/libsodium-populate-stamp/libsodium-populate-install	35dac442d8990db2
+3358	3422	8029534078928290	D:/Dev/repos/claude_grimledger/GrimLedger/build-desktop-test/_deps/libsodium-subbuild/libsodium-populate-prefix/src/libsodium-populate-stamp/libsodium-populate-install	35dac442d8990db2
+3422	3482	8029534079548409	libsodium-populate-prefix/src/libsodium-populate-stamp/libsodium-populate-test	671f924b88415013
+3422	3482	8029534079548409	D:/Dev/repos/claude_grimledger/GrimLedger/build-desktop-test/_deps/libsodium-subbuild/libsodium-populate-prefix/src/libsodium-populate-stamp/libsodium-populate-test	671f924b88415013
+3482	3577	8029534080498289	CMakeFiles/libsodium-populate-complete	72315fd9437a3f2c
+3482	3577	8029534080498289	libsodium-populate-prefix/src/libsodium-populate-stamp/libsodium-populate-done	72315fd9437a3f2c
+3482	3577	8029534080498289	D:/Dev/repos/claude_grimledger/GrimLedger/build-desktop-test/_deps/libsodium-subbuild/CMakeFiles/libsodium-populate-complete	72315fd9437a3f2c
+3482	3577	8029534080498289	D:/Dev/repos/claude_grimledger/GrimLedger/build-desktop-test/_deps/libsodium-subbuild/libsodium-populate-prefix/src/libsodium-populate-stamp/libsodium-populate-done	72315fd9437a3f2c

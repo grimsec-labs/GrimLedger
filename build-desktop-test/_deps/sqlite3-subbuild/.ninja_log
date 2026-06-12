@@ -1,0 +1,21 @@
+# ninja log v6
+2	66	8029534082857007	sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-mkdir	70c54763c59b3d7a
+2	66	8029534082857007	D:/Dev/repos/claude_grimledger/GrimLedger/build-desktop-test/_deps/sqlite3-subbuild/sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-mkdir	70c54763c59b3d7a
+66	2359	8029534105768141	sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-download	55e841a740448fe9
+66	2359	8029534105768141	D:/Dev/repos/claude_grimledger/GrimLedger/build-desktop-test/_deps/sqlite3-subbuild/sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-download	55e841a740448fe9
+2359	2424	8029534106418145	sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-update	1dff503d9cb35602
+2359	2424	8029534106418145	D:/Dev/repos/claude_grimledger/GrimLedger/build-desktop-test/_deps/sqlite3-subbuild/sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-update	1dff503d9cb35602
+2424	2488	8029534107063831	sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-patch	ddc69b928481dea7
+2424	2488	8029534107063831	D:/Dev/repos/claude_grimledger/GrimLedger/build-desktop-test/_deps/sqlite3-subbuild/sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-patch	ddc69b928481dea7
+2488	2550	8029534107689872	sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-configure	f3762938a83d02c
+2488	2550	8029534107689872	D:/Dev/repos/claude_grimledger/GrimLedger/build-desktop-test/_deps/sqlite3-subbuild/sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-configure	f3762938a83d02c
+2550	2614	8029534108329453	sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-build	57968827e8d251c7
+2550	2614	8029534108329453	D:/Dev/repos/claude_grimledger/GrimLedger/build-desktop-test/_deps/sqlite3-subbuild/sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-build	57968827e8d251c7
+2614	2675	8029534108936893	sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-install	d4af3cca4b5cf6a5
+2614	2675	8029534108936893	D:/Dev/repos/claude_grimledger/GrimLedger/build-desktop-test/_deps/sqlite3-subbuild/sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-install	d4af3cca4b5cf6a5
+2676	2737	8029534109558380	sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-test	8684d28945b937ae
+2676	2737	8029534109558380	D:/Dev/repos/claude_grimledger/GrimLedger/build-desktop-test/_deps/sqlite3-subbuild/sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-test	8684d28945b937ae
+2737	2819	8029534110381546	CMakeFiles/sqlite3-populate-complete	5ad4ec39a7ff39
+2737	2819	8029534110381546	sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-done	5ad4ec39a7ff39
+2737	2819	8029534110381546	D:/Dev/repos/claude_grimledger/GrimLedger/build-desktop-test/_deps/sqlite3-subbuild/CMakeFiles/sqlite3-populate-complete	5ad4ec39a7ff39
+2737	2819	8029534110381546	D:/Dev/repos/claude_grimledger/GrimLedger/build-desktop-test/_deps/sqlite3-subbuild/sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-done	5ad4ec39a7ff39

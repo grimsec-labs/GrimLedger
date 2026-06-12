@@ -11,7 +11,15 @@ object GrimLedgerBridge {
     external fun nativeFillCredential(credentialId: String, field: String): String
 
     @JvmStatic
+    external fun nativeOnCameraResult(filePath: String)
+
+    @JvmStatic
     fun registerNativeController(ptr: Long) {
         nativeSetVaultController(ptr)
+    }
+
+    @JvmStatic
+    fun onCameraResult(filePath: String) {
+        nativeOnCameraResult(filePath)
     }
 }

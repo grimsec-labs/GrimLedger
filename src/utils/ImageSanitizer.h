@@ -17,4 +17,8 @@ public:
 
     // Decode pixels and re-encode as PNG to strip EXIF/metadata.
     static bool sanitizeFromFile(const QString& path, SanitizedImage& out, QString* error = nullptr);
+
+    // Same pipeline as sanitizeFromFile, but operates on in-memory bytes. Used on
+    // Android where the file picker hands back content bytes (no filesystem path).
+    static bool sanitizeFromData(const QByteArray& data, SanitizedImage& out, QString* error = nullptr);
 };

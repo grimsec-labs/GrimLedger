@@ -55,6 +55,24 @@ Java_org_grimseclabs_grimledger_GrimLedgerBridge_nativeFillCredential(
     return env->NewStringUTF(value.toUtf8().constData());
 }
 
+extern "C" JNIEXPORT void JNICALL
+Java_org_grimseclabs_grimledger_GrimLedgerBridge_nativeOnCameraResult(
+    JNIEnv* env, jobject, jstring filePath) {
+    if (!g_vaultController || !filePath) {
+        return;
+    }
+    const char* pathChars = env->GetStringUTFChars(filePath, nullptr);
+    if (!pathChars) {
+        return;
+    }
+    const QString path = QString::fromUtf8(pathChars);
+    env->ReleaseStringUTFChars(filePath, pathChars);
+
+    QMetaObject::invokeMethod(g_vaultController, [path]() {
+        g_vaultController->onCameraResult(path);
+    }, Qt::QueuedConnection);
+}
+
 void AndroidJniBridge_registerController(GrimVaultController* controller) {
     g_vaultController = controller;
     QJniObject::callStaticMethod<void>(
