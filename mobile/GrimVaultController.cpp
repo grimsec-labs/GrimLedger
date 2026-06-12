@@ -22,7 +22,9 @@
 #include <QFile>
 #include <QGuiApplication>
 #include <QJsonObject>
+#include <QPermissions>
 #include <QSettings>
+#include <QTextDocument>
 #include <QVariantMap>
 
 #include <sodium.h>
@@ -258,12 +260,141 @@ bool GrimVaultController::deleteNote(qint64 noteId) {
     return m_notes.deleteNote(noteId);
 }
 
-QVariantList GrimVaultController::noteSummariesFiltered(qint64 folderId, bool favoritesOnly) const {
+int GrimVaultController::deleteNotes(const QVariantList& noteIds) {
+    if (!isUnlocked()) return 0;
+    int count = 0;
+    for (const QVariant& v : noteIds) {
+        const qint64 id = v.toLongLong();
+        if (id > 0 && m_notes.deleteNote(id))
+            ++count;
+    }
+    return count;
+}
+
+int GrimVaultController::setNotesFavorite(const QVariantList& noteIds, bool favorite) {
+    if (!isUnlocked()) return 0;
+    int count = 0;
+    for (const QVariant& v : noteIds) {
+        const qint64 id = v.toLongLong();
+        if (id <= 0) continue;
+        auto note = m_notes.getNote(id, m_session.key());
+        if (!note) continue;
+        note->isFavorite = favorite;
+        if (m_notes.updateNote(*note, m_session.key()))
+            ++count;
+    }
+    return count;
+}
+
+int GrimVaultController::moveNotesToFolder(const QVariantList& noteIds, qint64 folderId) {
+    if (!isUnlocked()) return 0;
+    int count = 0;
+    for (const QVariant& v : noteIds) {
+        const qint64 id = v.toLongLong();
+        if (id <= 0) continue;
+        auto note = m_notes.getNote(id, m_session.key());
+        if (!note) continue;
+        note->folderId = folderId;
+        if (m_notes.updateNote(*note, m_session.key()))
+            ++count;
+    }
+    return count;
+}
+
+bool GrimVaultController::exportNoteMarkdown(qint64 noteId, const QUrl& destUrl) {
+    if (!isUnlocked() || noteId <= 0 || destUrl.isEmpty()) return false;
+    const auto note = m_notes.getNote(noteId, m_session.key());
+    if (!note) {
+        emit errorOccurred(QStringLiteral("Could not read the note."));
+        return false;
+    }
+    const QString dest = destUrl.isLocalFile() ? destUrl.toLocalFile() : destUrl.toString();
+    QFile f(dest);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        emit errorOccurred(QStringLiteral("Could not write to the selected location."));
+        return false;
+    }
+    f.write(QStringLiteral("# %1\n\n%2\n").arg(note->title, note->body).toUtf8());
+    f.close();
+    emit exportFinished(QStringLiteral("Note exported as Markdown."));
+    return true;
+}
+
+bool GrimVaultController::exportNotesMarkdown(const QVariantList& noteIds, const QUrl& destUrl) {
+    if (!isUnlocked() || noteIds.isEmpty() || destUrl.isEmpty()) return false;
+    const QString dest = destUrl.isLocalFile() ? destUrl.toLocalFile() : destUrl.toString();
+    QFile f(dest);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        emit errorOccurred(QStringLiteral("Could not write to the selected location."));
+        return false;
+    }
+    int count = 0;
+    for (const QVariant& v : noteIds) {
+        const qint64 id = v.toLongLong();
+        if (id <= 0) continue;
+        const auto note = m_notes.getNote(id, m_session.key());
+        if (!note) continue;
+        if (count > 0)
+            f.write(QByteArrayLiteral("\n---\n\n"));
+        f.write(QStringLiteral("# %1\n\n%2\n").arg(note->title, note->body).toUtf8());
+        ++count;
+    }
+    f.close();
+    emit exportFinished(QStringLiteral("Exported %1 note(s) as Markdown.").arg(count));
+    return true;
+}
+
+bool GrimVaultController::exportNoteHtml(qint64 noteId, const QUrl& destUrl) {
+    if (!isUnlocked() || noteId <= 0 || destUrl.isEmpty()) return false;
+    const auto note = m_notes.getNote(noteId, m_session.key());
+    if (!note) {
+        emit errorOccurred(QStringLiteral("Could not read the note."));
+        return false;
+    }
+    QTextDocument doc;
+    doc.setMarkdown(note->body);
+    const QString html = QStringLiteral(
+        "<!DOCTYPE html>\n<html><head><meta charset=\"utf-8\">"
+        "<title>%1</title>"
+        "<style>body{font-family:monospace;max-width:800px;margin:2em auto;padding:0 1em;"
+        "background:#1a1a1a;color:#e0e0e0}a{color:#cc2200}pre,code{background:#111;padding:.3em}"
+        "h1,h2,h3{color:#cc2200}</style></head>"
+        "<body><h1>%1</h1>%2</body></html>")
+        .arg(note->title.toHtmlEscaped(), doc.toHtml());
+    const QString dest = destUrl.isLocalFile() ? destUrl.toLocalFile() : destUrl.toString();
+    QFile f(dest);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        emit errorOccurred(QStringLiteral("Could not write to the selected location."));
+        return false;
+    }
+    f.write(html.toUtf8());
+    f.close();
+    emit exportFinished(QStringLiteral("Note exported as HTML."));
+    return true;
+}
+
+bool GrimVaultController::deleteFolderSafe(qint64 folderId) {
+    if (!isUnlocked() || folderId <= 0) return false;
+    for (const Note& n : m_notes.listNotes(m_session.key(), NoteSortField::Modified, true, folderId)) {
+        auto full = m_notes.getNote(n.id, m_session.key());
+        if (full) {
+            full->folderId = 0;
+            m_notes.updateNote(*full, m_session.key());
+        }
+    }
+    return m_notes.deleteFolder(folderId);
+}
+
+QVariantList GrimVaultController::noteSummariesFiltered(qint64 folderId, bool favoritesOnly,
+                                                        int sortField, bool descending) const {
     QVariantList out;
     if (!isUnlocked()) {
         return out;
     }
-    for (const Note& n : m_notes.listNotes(m_session.key(), NoteSortField::Modified, true, folderId, favoritesOnly)) {
+    auto sf = NoteSortField::Modified;
+    if (sortField == 0) sf = NoteSortField::Title;
+    else if (sortField == 1) sf = NoteSortField::Created;
+    for (const Note& n : m_notes.listNotes(m_session.key(), sf, descending, folderId, favoritesOnly)) {
         QVariantMap row;
         row.insert(QStringLiteral("id"), n.id);
         row.insert(QStringLiteral("title"), n.title);
@@ -563,12 +694,25 @@ void GrimVaultController::launchCamera(qint64 noteId) {
         s.setValue(QStringLiteral("camera/pendingNoteId"), noteId);
     }
 
+    const auto status = qApp->checkPermission(QCameraPermission{});
+    if (status == Qt::PermissionStatus::Granted) {
+        launchCameraInternal();
+        return;
+    }
+    emit cameraPermissionNeeded();
+#else
+    Q_UNUSED(noteId)
+    emit errorOccurred(QStringLiteral("Camera capture is only available on Android."));
+#endif
+}
+
+void GrimVaultController::launchCameraInternal() {
+#if defined(Q_OS_ANDROID)
     QJniObject context(QNativeInterface::QAndroidApplication::context());
     if (!context.isValid()) {
         emit errorOccurred(QStringLiteral("Failed to get Android context."));
         return;
     }
-
     QJniEnvironment env;
     QJniObject::callStaticMethod<void>(
         "org/grimseclabs/grimledger/GrimCameraActivity",
@@ -578,9 +722,59 @@ void GrimVaultController::launchCamera(qint64 noteId) {
     if (env.checkAndClearExceptions()) {
         emit errorOccurred(QStringLiteral("Failed to launch camera."));
     }
+#endif
+}
+
+int GrimVaultController::cameraPermissionStatus() const {
+#if defined(Q_OS_ANDROID)
+    switch (qApp->checkPermission(QCameraPermission{})) {
+    case Qt::PermissionStatus::Granted:      return 0;
+    case Qt::PermissionStatus::Undetermined: return 1;
+    case Qt::PermissionStatus::Denied:       return 2;
+    }
+#endif
+    return 0;
+}
+
+void GrimVaultController::requestCameraPermission() {
+#if defined(Q_OS_ANDROID)
+    qApp->requestPermission(QCameraPermission{}, this, [this](const QPermission& p) {
+        const bool granted = (p.status() == Qt::PermissionStatus::Granted);
+        emit cameraPermissionResult(granted);
+        if (granted && m_pendingCameraNoteId > 0)
+            launchCameraInternal();
+    });
 #else
-    Q_UNUSED(noteId)
-    emit errorOccurred(QStringLiteral("Camera capture is only available on Android."));
+    emit cameraPermissionResult(true);
+#endif
+}
+
+void GrimVaultController::openAppSettings() {
+#if defined(Q_OS_ANDROID)
+    QJniObject context(QNativeInterface::QAndroidApplication::context());
+    if (!context.isValid()) return;
+    QJniObject packageName = context.callObjectMethod("getPackageName", "()Ljava/lang/String;");
+    QJniObject uriStr = QJniObject::fromString(
+        QStringLiteral("package:") + packageName.toString());
+    QJniObject uri = QJniObject::callStaticObjectMethod(
+        "android/net/Uri", "parse",
+        "(Ljava/lang/String;)Landroid/net/Uri;",
+        uriStr.object<jstring>());
+    QJniObject actionStr = QJniObject::getStaticObjectField(
+        "android/provider/Settings",
+        "ACTION_APPLICATION_DETAILS_SETTINGS",
+        "Ljava/lang/String;");
+    QJniObject intent("android/content/Intent", "(Ljava/lang/String;)V",
+        actionStr.object<jstring>());
+    intent.callObjectMethod("setData",
+        "(Landroid/net/Uri;)Landroid/content/Intent;",
+        uri.object());
+    intent.callObjectMethod("addFlags", "(I)Landroid/content/Intent;",
+        jint(0x10000000));
+    QJniEnvironment env;
+    context.callMethod<void>("startActivity",
+        "(Landroid/content/Intent;)V", intent.object());
+    env.checkAndClearExceptions();
 #endif
 }
 

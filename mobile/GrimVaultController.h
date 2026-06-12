@@ -4,6 +4,7 @@
 #include <QJsonArray>
 #include <QString>
 #include <QUrl>
+#include <QVariantList>
 #include <QVector>
 
 #include "models/CredentialSummary.h"
@@ -45,7 +46,8 @@ public:
 
     // Notes
     Q_INVOKABLE QVariantList noteSummaries() const;
-    Q_INVOKABLE QVariantList noteSummariesFiltered(qint64 folderId, bool favoritesOnly) const;
+    Q_INVOKABLE QVariantList noteSummariesFiltered(qint64 folderId, bool favoritesOnly,
+                                                      int sortField = 2, bool descending = true) const;
     Q_INVOKABLE QString noteBody(qint64 noteId) const;
     Q_INVOKABLE QVariantMap noteDetail(qint64 noteId) const;
     Q_INVOKABLE bool saveNote(qint64 noteId, const QString& title, const QString& body);
@@ -55,11 +57,22 @@ public:
     Q_INVOKABLE bool deleteNote(qint64 noteId);
     Q_INVOKABLE QVariantList searchNotes(const QString& query);
 
+    // Multi-note operations
+    Q_INVOKABLE int deleteNotes(const QVariantList& noteIds);
+    Q_INVOKABLE int setNotesFavorite(const QVariantList& noteIds, bool favorite);
+    Q_INVOKABLE int moveNotesToFolder(const QVariantList& noteIds, qint64 folderId);
+
+    // Note export
+    Q_INVOKABLE bool exportNoteMarkdown(qint64 noteId, const QUrl& destUrl);
+    Q_INVOKABLE bool exportNotesMarkdown(const QVariantList& noteIds, const QUrl& destUrl);
+    Q_INVOKABLE bool exportNoteHtml(qint64 noteId, const QUrl& destUrl);
+
     // Folders
     Q_INVOKABLE QVariantList folders() const;
     Q_INVOKABLE qint64 createFolder(const QString& name);
     Q_INVOKABLE bool renameFolder(qint64 id, const QString& name);
     Q_INVOKABLE bool deleteFolder(qint64 id);
+    Q_INVOKABLE bool deleteFolderSafe(qint64 folderId);
 
     // Tags
     Q_INVOKABLE QStringList allTags() const;
@@ -106,6 +119,11 @@ public:
 
     Q_INVOKABLE void copyToClipboard(const QString& text);
 
+    // Camera permission
+    Q_INVOKABLE int cameraPermissionStatus() const;
+    Q_INVOKABLE void requestCameraPermission();
+    Q_INVOKABLE void openAppSettings();
+
     Q_INVOKABLE void saveSettings(bool lineNumbers, bool wordWrap, bool autoLock, int autoLockMin);
     Q_INVOKABLE void resetSettings();
     Q_INVOKABLE bool lineNumbers() const;
@@ -120,6 +138,8 @@ signals:
     void attachmentDeleted(const QString& attachmentId, qint64 noteId);
     void exportFinished(const QString& message);
     void errorOccurred(const QString& message);
+    void cameraPermissionNeeded();
+    void cameraPermissionResult(bool granted);
 
 private:
     Database m_db;
@@ -130,6 +150,8 @@ private:
     AttachmentRepository m_attachments;
     QString m_accent = QStringLiteral("#cc2200");
     qint64 m_pendingCameraNoteId = 0;
+
+    void launchCameraInternal();
 
 public:
     void onCameraResult(const QString& filePath);
