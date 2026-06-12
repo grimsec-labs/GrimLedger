@@ -5,12 +5,14 @@ import Theme 1.0
 TextArea {
     id: control
 
+    property bool useWordWrap: true
+
     padding: Theme.spacingSm
     color: Theme.textBright
     placeholderTextColor: Theme.textMuted
     font.family: Theme.uiFont
     font.pixelSize: 15
-    wrapMode: TextArea.Wrap
+    wrapMode: useWordWrap ? TextArea.Wrap : TextArea.NoWrap
     selectionColor: Theme.selectionBg
     selectedTextColor: Theme.selectionText
 

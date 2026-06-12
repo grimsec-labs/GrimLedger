@@ -10,12 +10,17 @@ Item {
 
     property int currentNoteId: 0
     property var imagePreviews: []
+    property int filterFolderId: 0
+    property bool filterFavoritesOnly: false
+    property int noteFolderId: 0
+    property bool noteIsFavorite: false
+    property var noteTags: []
 
     function refreshList() {
         if (searchField.text.length > 0)
             noteList.model = vault.searchNotes(searchField.text)
         else
-            noteList.model = vault.noteSummaries()
+            noteList.model = vault.noteSummariesFiltered(filterFolderId, filterFavoritesOnly)
     }
 
     function loadNotePreviews() {
@@ -29,6 +34,11 @@ Item {
         currentNoteId = noteId
         titleField.text = title
         bodyField.text = vault.noteBody(noteId)
+        var detail = vault.noteDetail(noteId)
+        noteFolderId = detail.folderId || 0
+        noteIsFavorite = detail.isFavorite || false
+        noteTags = detail.tags || []
+        tagsField.text = noteTags.join(", ")
         loadNotePreviews()
     }
 
@@ -37,6 +47,10 @@ Item {
         titleField.text = ""
         bodyField.text = ""
         imagePreviews = []
+        noteFolderId = 0
+        noteIsFavorite = false
+        noteTags = []
+        tagsField.text = ""
     }
 
     ColumnLayout {
@@ -72,6 +86,40 @@ Item {
             Layout.fillWidth: true
             spacing: Theme.spacingSm
 
+            ComboBox {
+                id: folderFilter
+                Layout.fillWidth: true
+                model: {
+                    var items = [{"text": "All Folders", "value": 0}]
+                    var folders = vault.unlocked ? vault.folders() : []
+                    for (var i = 0; i < folders.length; i++)
+                        items.push({"text": folders[i].name, "value": folders[i].id})
+                    return items
+                }
+                textRole: "text"
+                valueRole: "value"
+                currentIndex: 0
+                onActivated: {
+                    filterFolderId = currentValue
+                    refreshList()
+                }
+                font.family: Theme.monoFont
+                font.pixelSize: 12
+            }
+
+            GrimButton {
+                text: filterFavoritesOnly ? "Fav ON" : "Fav"
+                onClicked: {
+                    filterFavoritesOnly = !filterFavoritesOnly
+                    refreshList()
+                }
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: Theme.spacingSm
+
             GrimButton {
                 text: "Delete"
                 enabled: currentNoteId > 0
@@ -99,7 +147,9 @@ Item {
                 primary: true
                 enabled: currentNoteId > 0
                 onClicked: {
-                    vault.saveNote(currentNoteId, titleField.text, bodyField.text)
+                    var tagList = tagsField.text.split(",").map(function(t) { return t.trim() }).filter(function(t) { return t.length > 0 })
+                    vault.saveNoteEx(currentNoteId, titleField.text, bodyField.text,
+                                     noteFolderId, noteIsFavorite, tagList)
                     refreshList()
                     loadNotePreviews()
                 }
@@ -141,11 +191,30 @@ Item {
             }
         }
 
-        GrimTextField {
-            id: titleField
+        RowLayout {
             Layout.fillWidth: true
-            placeholderText: "Title"
+            spacing: Theme.spacingSm
+
+            GrimTextField {
+                id: titleField
+                Layout.fillWidth: true
+                placeholderText: "Title"
+                monospace: true
+            }
+
+            GrimButton {
+                text: noteIsFavorite ? "Unfav" : "Fav"
+                enabled: currentNoteId > 0
+                onClicked: noteIsFavorite = !noteIsFavorite
+            }
+        }
+
+        GrimTextField {
+            id: tagsField
+            Layout.fillWidth: true
+            placeholderText: "Tags (comma-separated)"
             monospace: true
+            font.pixelSize: 12
         }
 
         // Attachment image gallery — resolves from encrypted store on every note load
@@ -244,6 +313,7 @@ Item {
 
             GrimTextArea {
                 id: bodyField
+                useWordWrap: vault.wordWrap()
             }
         }
     }
@@ -411,10 +481,12 @@ Item {
             loadNotePreviews()
         }
         function onUnlockedChanged() {
-            if (vault.unlocked && currentNoteId > 0)
+            if (vault.unlocked && currentNoteId > 0) {
+                bodyField.text = vault.noteBody(currentNoteId)
                 loadNotePreviews()
-            else
+            } else {
                 imagePreviews = []
+            }
         }
         function onAttachmentDeleted(attachmentId, noteId) {
             if (noteId === currentNoteId)

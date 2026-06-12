@@ -43,12 +43,26 @@ public:
     Q_INVOKABLE bool enableBiometric(const QString& password);
     Q_INVOKABLE void disableBiometric();
 
+    // Notes
     Q_INVOKABLE QVariantList noteSummaries() const;
+    Q_INVOKABLE QVariantList noteSummariesFiltered(qint64 folderId, bool favoritesOnly) const;
     Q_INVOKABLE QString noteBody(qint64 noteId) const;
+    Q_INVOKABLE QVariantMap noteDetail(qint64 noteId) const;
     Q_INVOKABLE bool saveNote(qint64 noteId, const QString& title, const QString& body);
+    Q_INVOKABLE bool saveNoteEx(qint64 noteId, const QString& title, const QString& body,
+                                 qint64 folderId, bool isFavorite, const QStringList& tags);
     Q_INVOKABLE qint64 createNote(const QString& title);
     Q_INVOKABLE bool deleteNote(qint64 noteId);
     Q_INVOKABLE QVariantList searchNotes(const QString& query);
+
+    // Folders
+    Q_INVOKABLE QVariantList folders() const;
+    Q_INVOKABLE qint64 createFolder(const QString& name);
+    Q_INVOKABLE bool renameFolder(qint64 id, const QString& name);
+    Q_INVOKABLE bool deleteFolder(qint64 id);
+
+    // Tags
+    Q_INVOKABLE QStringList allTags() const;
 
     // Image attachments
     Q_INVOKABLE void insertImageIntoNote(qint64 noteId, const QUrl& fileUrl);
@@ -60,19 +74,35 @@ public:
     Q_INVOKABLE bool deleteAttachment(const QString& attachmentId, qint64 noteId);
     Q_INVOKABLE bool exportAttachment(const QString& attachmentId, qint64 noteId, const QUrl& destUrl);
 
+    // Credentials
     Q_INVOKABLE QVariantList credentialSummaries() const;
     Q_INVOKABLE QString credentialPassword(qint64 id) const;
     Q_INVOKABLE QVariantMap credentialDetail(qint64 id) const;
     Q_INVOKABLE qint64 createCredential(const QString& label, const QString& username,
                                          const QString& password, const QString& url,
                                          const QString& notes, const QString& totpSecret);
+    Q_INVOKABLE qint64 createCredentialEx(const QString& label, const QString& username,
+                                           const QString& password, const QString& url,
+                                           const QString& notes, const QString& totpSecret,
+                                           int fillTrustLevel);
     Q_INVOKABLE bool updateCredential(qint64 id, const QString& label, const QString& username,
                                        const QString& password, const QString& url,
                                        const QString& notes, const QString& totpSecret);
+    Q_INVOKABLE bool updateCredentialEx(qint64 id, const QString& label, const QString& username,
+                                         const QString& password, const QString& url,
+                                         const QString& notes, const QString& totpSecret,
+                                         int fillTrustLevel);
     Q_INVOKABLE bool deleteCredential(qint64 id);
     Q_INVOKABLE QVariantList searchCredentials(const QString& query);
     Q_INVOKABLE QString totpCode(qint64 id);
     Q_INVOKABLE int totpSecondsRemaining();
+
+    // Password generator
+    Q_INVOKABLE QString generatePassword(int length, bool upper, bool lower,
+                                          bool digits, bool symbols, bool avoidAmbiguous);
+
+    // Fill trust level labels for UI
+    Q_INVOKABLE QVariantList fillTrustLevels() const;
 
     Q_INVOKABLE void copyToClipboard(const QString& text);
 

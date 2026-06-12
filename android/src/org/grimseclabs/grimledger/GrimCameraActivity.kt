@@ -13,12 +13,18 @@ import java.io.File
 import java.io.FileOutputStream
 
 class GrimCameraActivity : Activity() {
-    private var captureFile: File? = null
+    private var captureFilePath: String? = null
     private var useFileProvider: Boolean = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Log.d(TAG, "onCreate started")
+
+        val restored = savedInstanceState?.getString(KEY_CAPTURE_PATH)
+        if (restored != null) {
+            captureFilePath = restored
+            useFileProvider = savedInstanceState.getBoolean(KEY_USE_FP, false)
+            return
+        }
 
         val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
 
@@ -26,32 +32,35 @@ class GrimCameraActivity : Activity() {
             val dir = File(cacheDir, "grimcapture")
             dir.mkdirs()
             val tempFile = File(dir, "capture_${System.currentTimeMillis()}.jpg")
-            captureFile = tempFile
+            captureFilePath = tempFile.absolutePath
 
             val uri: Uri = FileProvider.getUriForFile(
                 this, "org.grimseclabs.grimledger.fileprovider", tempFile)
             intent.putExtra(MediaStore.EXTRA_OUTPUT, uri)
             intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
             useFileProvider = true
-            Log.d(TAG, "FileProvider URI created: $uri")
         } catch (e: Exception) {
-            Log.w(TAG, "FileProvider failed, falling back to thumbnail mode", e)
+            Log.w(TAG, "FileProvider unavailable, thumbnail mode", e)
             useFileProvider = false
         }
 
         try {
             startActivityForResult(intent, REQUEST_CODE)
-            Log.d(TAG, "Camera intent launched")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to launch camera intent", e)
+            Log.e(TAG, "Camera intent failed", e)
             cleanup()
             finish()
         }
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        captureFilePath?.let { outState.putString(KEY_CAPTURE_PATH, it) }
+        outState.putBoolean(KEY_USE_FP, useFileProvider)
+    }
+
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        Log.d(TAG, "onActivityResult: requestCode=$requestCode resultCode=$resultCode")
 
         if (requestCode != REQUEST_CODE) {
             cleanup()
@@ -60,19 +69,17 @@ class GrimCameraActivity : Activity() {
         }
 
         if (resultCode != RESULT_OK) {
-            Log.d(TAG, "Camera cancelled or failed")
             cleanup()
             finish()
             return
         }
 
         if (useFileProvider) {
-            val file = captureFile
+            val path = captureFilePath
+            val file = if (path != null) File(path) else null
             if (file != null && file.exists() && file.length() > 0) {
-                Log.d(TAG, "FileProvider capture OK: ${file.absolutePath} (${file.length()} bytes)")
                 GrimLedgerBridge.onCameraResult(file.absolutePath)
             } else {
-                Log.w(TAG, "FileProvider file missing or empty, trying thumbnail fallback")
                 saveThumbnailFallback(data)
             }
         } else {
@@ -84,7 +91,6 @@ class GrimCameraActivity : Activity() {
     private fun saveThumbnailFallback(data: Intent?) {
         val bitmap = data?.extras?.get("data") as? Bitmap
         if (bitmap == null) {
-            Log.e(TAG, "No thumbnail bitmap in intent extras")
             cleanup()
             return
         }
@@ -96,29 +102,29 @@ class GrimCameraActivity : Activity() {
             FileOutputStream(tempFile).use { out ->
                 bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
             }
-            captureFile = tempFile
-            Log.d(TAG, "Thumbnail saved: ${tempFile.absolutePath} (${tempFile.length()} bytes)")
+            captureFilePath = tempFile.absolutePath
             GrimLedgerBridge.onCameraResult(tempFile.absolutePath)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to save thumbnail", e)
+            Log.e(TAG, "Thumbnail save failed", e)
             cleanup()
         }
     }
 
     private fun cleanup() {
-        captureFile?.let {
-            try { it.delete() } catch (_: Exception) {}
+        captureFilePath?.let {
+            try { File(it).delete() } catch (_: Exception) {}
         }
-        captureFile = null
+        captureFilePath = null
     }
 
     companion object {
         private const val TAG = "GrimCamera"
         private const val REQUEST_CODE = 9001
+        private const val KEY_CAPTURE_PATH = "capture_path"
+        private const val KEY_USE_FP = "use_fp"
 
         @JvmStatic
         fun launch(context: Context) {
-            Log.d(TAG, "launch() called")
             val intent = Intent(context, GrimCameraActivity::class.java)
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(intent)

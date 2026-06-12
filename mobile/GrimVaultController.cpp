@@ -3,16 +3,19 @@
 #if defined(Q_OS_ANDROID)
 #include "android_jni_bridge.h"
 #include <QJniObject>
+#include <QJniEnvironment>
 #include <QCoreApplication>
 #endif
 #include "bridge/OriginMatcher.h"
 #include "models/Credential.h"
+#include "models/FillTrustLevel.h"
 #include "search/SearchEngine.h"
 #include "security/CryptoManager.h"
 #include "security/PasswordManager.h"
 #include "security/PlatformBiometricUnlock.h"
 #include "utils/AppSettings.h"
 #include "utils/ImageSanitizer.h"
+#include "utils/PasswordGenerator.h"
 #include "utils/TotpGenerator.h"
 
 #include <QClipboard>
@@ -21,6 +24,8 @@
 #include <QJsonObject>
 #include <QSettings>
 #include <QVariantMap>
+
+#include <sodium.h>
 
 namespace {
 constexpr auto kDefaultAccent = "#cc2200";
@@ -253,17 +258,109 @@ bool GrimVaultController::deleteNote(qint64 noteId) {
     return m_notes.deleteNote(noteId);
 }
 
+QVariantList GrimVaultController::noteSummariesFiltered(qint64 folderId, bool favoritesOnly) const {
+    QVariantList out;
+    if (!isUnlocked()) {
+        return out;
+    }
+    for (const Note& n : m_notes.listNotes(m_session.key(), NoteSortField::Modified, true, folderId, favoritesOnly)) {
+        QVariantMap row;
+        row.insert(QStringLiteral("id"), n.id);
+        row.insert(QStringLiteral("title"), n.title);
+        row.insert(QStringLiteral("isFavorite"), n.isFavorite);
+        row.insert(QStringLiteral("folderId"), n.folderId);
+        row.insert(QStringLiteral("folderName"), n.folderName);
+        row.insert(QStringLiteral("tags"), QStringList(n.tags.begin(), n.tags.end()));
+        out.append(row);
+    }
+    return out;
+}
+
+QVariantMap GrimVaultController::noteDetail(qint64 noteId) const {
+    QVariantMap out;
+    if (!isUnlocked() || noteId <= 0) {
+        return out;
+    }
+    const auto note = m_notes.getNote(noteId, m_session.key());
+    if (!note) {
+        return out;
+    }
+    out.insert(QStringLiteral("id"), note->id);
+    out.insert(QStringLiteral("title"), note->title);
+    out.insert(QStringLiteral("body"), note->body);
+    out.insert(QStringLiteral("folderId"), note->folderId);
+    out.insert(QStringLiteral("isFavorite"), note->isFavorite);
+    out.insert(QStringLiteral("folderName"), note->folderName);
+    out.insert(QStringLiteral("tags"), QStringList(note->tags.begin(), note->tags.end()));
+    return out;
+}
+
+bool GrimVaultController::saveNoteEx(qint64 noteId, const QString& title, const QString& body,
+                                      qint64 folderId, bool isFavorite, const QStringList& tags) {
+    if (!isUnlocked()) {
+        return false;
+    }
+    Note note;
+    note.id = noteId;
+    note.title = title;
+    note.body = body;
+    note.folderId = folderId;
+    note.isFavorite = isFavorite;
+    note.tags = QVector<QString>(tags.begin(), tags.end());
+    return m_notes.updateNote(note, m_session.key());
+}
+
+QVariantList GrimVaultController::folders() const {
+    QVariantList out;
+    for (const Folder& f : m_notes.listFolders()) {
+        QVariantMap row;
+        row.insert(QStringLiteral("id"), f.id);
+        row.insert(QStringLiteral("name"), f.name);
+        row.insert(QStringLiteral("parentId"), f.parentId);
+        out.append(row);
+    }
+    return out;
+}
+
+qint64 GrimVaultController::createFolder(const QString& name) {
+    return m_notes.createFolder(name);
+}
+
+bool GrimVaultController::renameFolder(qint64 id, const QString& name) {
+    return m_notes.renameFolder(id, name);
+}
+
+bool GrimVaultController::deleteFolder(qint64 id) {
+    return m_notes.deleteFolder(id);
+}
+
+QStringList GrimVaultController::allTags() const {
+    QStringList out;
+    for (const Tag& t : m_notes.listTags()) {
+        out.append(t.name);
+    }
+    return out;
+}
+
 QVariantList GrimVaultController::searchNotes(const QString& query) {
     QVariantList out;
     if (!isUnlocked() || query.trimmed().isEmpty()) {
         return out;
     }
     const auto notes = m_notes.listNotes(m_session.key());
-    const auto matches = SearchEngine::search(notes, query, false);
+    QHash<qint64, QString> bodyMap;
+    for (const Note& n : notes) {
+        const auto full = m_notes.getNote(n.id, m_session.key());
+        if (full) {
+            bodyMap.insert(n.id, full->body);
+        }
+    }
+    const auto matches = SearchEngine::search(notes, query, true, bodyMap);
     for (const SearchMatch& m : matches) {
         QVariantMap row;
         row.insert(QStringLiteral("id"), m.note.id);
         row.insert(QStringLiteral("title"), m.note.title);
+        row.insert(QStringLiteral("bodyMatch"), !m.bodyMatchPositions.isEmpty());
         out.append(row);
     }
     return out;
@@ -460,13 +557,26 @@ void GrimVaultController::launchCamera(qint64 noteId) {
         return;
     }
     m_pendingCameraNoteId = noteId;
+    {
+        QSettings s;
+        s.setValue(QStringLiteral("camera/pendingNoteId"), noteId);
+    }
 
     QJniObject context(QNativeInterface::QAndroidApplication::context());
+    if (!context.isValid()) {
+        emit errorOccurred(QStringLiteral("Failed to get Android context."));
+        return;
+    }
+
+    QJniEnvironment env;
     QJniObject::callStaticMethod<void>(
         "org/grimseclabs/grimledger/GrimCameraActivity",
         "launch",
         "(Landroid/content/Context;)V",
         context.object());
+    if (env.checkAndClearExceptions()) {
+        emit errorOccurred(QStringLiteral("Failed to launch camera."));
+    }
 #else
     Q_UNUSED(noteId)
     emit errorOccurred(QStringLiteral("Camera capture is only available on Android."));
@@ -475,12 +585,39 @@ void GrimVaultController::launchCamera(qint64 noteId) {
 
 void GrimVaultController::onCameraResult(const QString& filePath) {
 #if defined(Q_OS_ANDROID)
-    if (filePath.isEmpty() || m_pendingCameraNoteId <= 0) {
-        m_pendingCameraNoteId = 0;
+    if (filePath.isEmpty()) {
         return;
     }
-    const qint64 noteId = m_pendingCameraNoteId;
+    qint64 noteId = m_pendingCameraNoteId;
+    if (noteId <= 0) {
+        QSettings s;
+        noteId = s.value(QStringLiteral("camera/pendingNoteId"), 0).toLongLong();
+    }
     m_pendingCameraNoteId = 0;
+    {
+        QSettings s;
+        s.remove(QStringLiteral("camera/pendingNoteId"));
+    }
+
+    if (noteId <= 0) {
+        QJniObject::callStaticMethod<void>(
+            "org/grimseclabs/grimledger/GrimCameraActivity",
+            "deleteTempFile",
+            "(Ljava/lang/String;)V",
+            QJniObject::fromString(filePath).object<jstring>());
+        emit errorOccurred(QStringLiteral("No note selected for camera image."));
+        return;
+    }
+
+    if (!isUnlocked()) {
+        QJniObject::callStaticMethod<void>(
+            "org/grimseclabs/grimledger/GrimCameraActivity",
+            "deleteTempFile",
+            "(Ljava/lang/String;)V",
+            QJniObject::fromString(filePath).object<jstring>());
+        emit errorOccurred(QStringLiteral("Vault locked — camera image discarded."));
+        return;
+    }
 
     insertImageIntoNote(noteId, QUrl::fromLocalFile(filePath));
 
@@ -510,12 +647,21 @@ QVariantMap GrimVaultController::credentialDetail(qint64 id) const {
     out.insert(QStringLiteral("url"), cred->url);
     out.insert(QStringLiteral("notes"), cred->notes);
     out.insert(QStringLiteral("totpSecret"), cred->totpSecret);
+    out.insert(QStringLiteral("fillTrustLevel"), static_cast<int>(cred->fillTrustLevel));
     return out;
 }
 
 qint64 GrimVaultController::createCredential(const QString& label, const QString& username,
                                               const QString& password, const QString& url,
                                               const QString& notes, const QString& totpSecret) {
+    return createCredentialEx(label, username, password, url, notes, totpSecret,
+                              static_cast<int>(FillTrustLevel::ExactOrigin));
+}
+
+qint64 GrimVaultController::createCredentialEx(const QString& label, const QString& username,
+                                                const QString& password, const QString& url,
+                                                const QString& notes, const QString& totpSecret,
+                                                int fillTrustLevel) {
     if (!isUnlocked()) {
         return 0;
     }
@@ -526,12 +672,21 @@ qint64 GrimVaultController::createCredential(const QString& label, const QString
     cred.url = url;
     cred.notes = notes;
     cred.totpSecret = totpSecret;
+    cred.fillTrustLevel = fillTrustLevelFromInt(fillTrustLevel);
     return m_credentials.createCredential(cred, m_session.key());
 }
 
 bool GrimVaultController::updateCredential(qint64 id, const QString& label, const QString& username,
                                             const QString& password, const QString& url,
                                             const QString& notes, const QString& totpSecret) {
+    return updateCredentialEx(id, label, username, password, url, notes, totpSecret,
+                              static_cast<int>(FillTrustLevel::ExactOrigin));
+}
+
+bool GrimVaultController::updateCredentialEx(qint64 id, const QString& label, const QString& username,
+                                              const QString& password, const QString& url,
+                                              const QString& notes, const QString& totpSecret,
+                                              int fillTrustLevel) {
     if (!isUnlocked()) {
         return false;
     }
@@ -543,6 +698,7 @@ bool GrimVaultController::updateCredential(qint64 id, const QString& label, cons
     cred.url = url;
     cred.notes = notes;
     cred.totpSecret = totpSecret;
+    cred.fillTrustLevel = fillTrustLevelFromInt(fillTrustLevel);
     return m_credentials.updateCredential(cred, m_session.key());
 }
 
@@ -616,4 +772,72 @@ bool GrimVaultController::lineNumbers() const {
 
 bool GrimVaultController::wordWrap() const {
     return AppSettings::wordWrapEnabled();
+}
+
+QString GrimVaultController::generatePassword(int length, bool upper, bool lower,
+                                               bool digits, bool symbols, bool avoidAmbiguous) {
+    if (length < 8) length = 8;
+    if (length > 128) length = 128;
+
+    QByteArray alphabet;
+    if (lower) {
+        alphabet.append("abcdefghijklmnopqrstuvwxyz");
+    }
+    if (upper) {
+        alphabet.append("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+    }
+    if (digits) {
+        alphabet.append("0123456789");
+    }
+    if (symbols) {
+        alphabet.append("!@#$%^&*()-_=+[]{}:,.?");
+    }
+    if (alphabet.isEmpty()) {
+        alphabet.append("abcdefghijklmnopqrstuvwxyz");
+    }
+
+    if (avoidAmbiguous) {
+        static const char ambiguous[] = "0O1lI|";
+        for (const char c : ambiguous) {
+            alphabet.remove(alphabet.indexOf(c), 1);
+        }
+    }
+
+    const int alphabetSize = alphabet.size();
+    if (alphabetSize == 0) {
+        return PasswordGenerator::generate(length);
+    }
+    const int maxUnbiased = 256 - (256 % alphabetSize);
+
+    QString result;
+    result.reserve(length);
+
+    QByteArray buf(64, Qt::Uninitialized);
+    int offset = 64;
+
+    while (result.size() < length) {
+        if (offset >= buf.size()) {
+            randombytes_buf(buf.data(), static_cast<size_t>(buf.size()));
+            offset = 0;
+        }
+        const unsigned char value = static_cast<unsigned char>(buf[offset++]);
+        if (value >= static_cast<unsigned int>(maxUnbiased)) {
+            continue;
+        }
+        result.append(QChar::fromLatin1(alphabet.at(value % alphabetSize)));
+    }
+
+    sodium_memzero(buf.data(), static_cast<size_t>(buf.size()));
+    return result;
+}
+
+QVariantList GrimVaultController::fillTrustLevels() const {
+    QVariantList out;
+    for (int i = 0; i <= 3; ++i) {
+        QVariantMap entry;
+        entry.insert(QStringLiteral("value"), i);
+        entry.insert(QStringLiteral("label"), fillTrustLevelLabel(fillTrustLevelFromInt(i)));
+        out.append(entry);
+    }
+    return out;
 }

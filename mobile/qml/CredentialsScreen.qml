@@ -11,6 +11,7 @@ Item {
     property bool editing: false
     property string currentTotpCode: ""
     property int totpSeconds: 30
+    property int fillTrustLevel: 2
 
     function refreshList() {
         if (searchField.text.length > 0)
@@ -28,6 +29,8 @@ Item {
         urlField.text = detail.url || ""
         notesField.text = detail.notes || ""
         totpField.text = detail.totpSecret || ""
+        fillTrustLevel = detail.fillTrustLevel !== undefined ? detail.fillTrustLevel : 2
+        trustCombo.currentIndex = fillTrustLevel
         editing = true
         updateTotp()
     }
@@ -42,6 +45,8 @@ Item {
         notesField.text = ""
         totpField.text = ""
         currentTotpCode = ""
+        fillTrustLevel = 2
+        trustCombo.currentIndex = 2
     }
 
     function updateTotp() {
@@ -151,12 +156,22 @@ Item {
                     monospace: true
                 }
 
-                GrimTextField {
-                    id: passwordField
+                RowLayout {
                     Layout.fillWidth: true
-                    placeholderText: "Password"
-                    passwordMode: true
-                    monospace: true
+                    spacing: Theme.spacingSm
+
+                    GrimTextField {
+                        id: passwordField
+                        Layout.fillWidth: true
+                        placeholderText: "Password"
+                        passwordMode: true
+                        monospace: true
+                    }
+
+                    GrimButton {
+                        text: "Gen"
+                        onClicked: passwordGenPopup.open()
+                    }
                 }
 
                 GrimTextField {
@@ -177,6 +192,30 @@ Item {
                     Layout.fillWidth: true
                     placeholderText: "TOTP secret (optional)"
                     monospace: true
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Theme.spacingSm
+
+                    Label {
+                        text: "Autofill trust:"
+                        font.family: Theme.monoFont
+                        font.pixelSize: 12
+                        color: Theme.textMuted
+                    }
+
+                    ComboBox {
+                        id: trustCombo
+                        Layout.fillWidth: true
+                        model: vault.fillTrustLevels()
+                        textRole: "label"
+                        valueRole: "value"
+                        currentIndex: 2
+                        onActivated: fillTrustLevel = currentValue
+                        font.family: Theme.monoFont
+                        font.pixelSize: 12
+                    }
                 }
 
                 RowLayout {
@@ -246,13 +285,13 @@ Item {
                         primary: true
                         onClicked: {
                             if (currentCredId > 0) {
-                                vault.updateCredential(currentCredId, labelField.text,
+                                vault.updateCredentialEx(currentCredId, labelField.text,
                                     usernameField.text, passwordField.text,
-                                    urlField.text, notesField.text, totpField.text)
+                                    urlField.text, notesField.text, totpField.text, fillTrustLevel)
                             } else {
-                                var newId = vault.createCredential(labelField.text,
+                                var newId = vault.createCredentialEx(labelField.text,
                                     usernameField.text, passwordField.text,
-                                    urlField.text, notesField.text, totpField.text)
+                                    urlField.text, notesField.text, totpField.text, fillTrustLevel)
                                 if (newId > 0) currentCredId = newId
                             }
                             refreshList()
@@ -318,6 +357,176 @@ Item {
                         vault.deleteCredential(currentCredId)
                         clearForm()
                         refreshList()
+                    }
+                }
+            }
+        }
+    }
+
+    Popup {
+        id: passwordGenPopup
+        anchors.centerIn: Overlay.overlay
+        width: Math.min(credRoot.width - Theme.spacingLg * 2, 340)
+        modal: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        padding: Theme.spacingMd
+
+        property string generatedPassword: ""
+        property int pwLength: 20
+        property bool pwUpper: true
+        property bool pwLower: true
+        property bool pwDigits: true
+        property bool pwSymbols: true
+        property bool pwAvoidAmbiguous: false
+
+        function generate() {
+            generatedPassword = vault.generatePassword(pwLength, pwUpper, pwLower,
+                                                        pwDigits, pwSymbols, pwAvoidAmbiguous)
+        }
+
+        onOpened: generate()
+
+        background: Rectangle {
+            color: Theme.surface
+            border.color: Theme.accent
+            border.width: 1
+            radius: Theme.radiusMedium
+        }
+
+        ColumnLayout {
+            width: parent.width
+            spacing: Theme.spacingSm
+
+            Label {
+                text: "Password Generator"
+                font.family: Theme.monoFont
+                font.pixelSize: 15
+                font.bold: true
+                color: Theme.accent
+                Layout.fillWidth: true
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: genPwLabel.implicitHeight + Theme.spacingSm * 2
+                color: Theme.listBackground
+                border.color: Theme.borderInfernal
+                border.width: 1
+                radius: Theme.radiusSmall
+
+                Label {
+                    id: genPwLabel
+                    anchors.fill: parent
+                    anchors.margins: Theme.spacingSm
+                    text: passwordGenPopup.generatedPassword
+                    font.family: Theme.monoFont
+                    font.pixelSize: 13
+                    color: Theme.terminalGreen
+                    wrapMode: Text.WrapAnywhere
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Theme.spacingSm
+
+                Label {
+                    text: "Length: " + pwLengthSlider.value
+                    font.family: Theme.monoFont
+                    font.pixelSize: 12
+                    color: Theme.textMuted
+                }
+
+                Slider {
+                    id: pwLengthSlider
+                    Layout.fillWidth: true
+                    from: 8
+                    to: 64
+                    stepSize: 1
+                    value: passwordGenPopup.pwLength
+                    onMoved: {
+                        passwordGenPopup.pwLength = value
+                        passwordGenPopup.generate()
+                    }
+                }
+            }
+
+            GridLayout {
+                Layout.fillWidth: true
+                columns: 2
+                columnSpacing: Theme.spacingSm
+                rowSpacing: Theme.spacingXs
+
+                CheckBox {
+                    id: cbUpper
+                    text: "Uppercase"
+                    checked: passwordGenPopup.pwUpper
+                    onToggled: { passwordGenPopup.pwUpper = checked; passwordGenPopup.generate() }
+                    font.family: Theme.monoFont
+                    font.pixelSize: 12
+                }
+
+                CheckBox {
+                    id: cbLower
+                    text: "Lowercase"
+                    checked: passwordGenPopup.pwLower
+                    onToggled: { passwordGenPopup.pwLower = checked; passwordGenPopup.generate() }
+                    font.family: Theme.monoFont
+                    font.pixelSize: 12
+                }
+
+                CheckBox {
+                    id: cbDigits
+                    text: "Digits"
+                    checked: passwordGenPopup.pwDigits
+                    onToggled: { passwordGenPopup.pwDigits = checked; passwordGenPopup.generate() }
+                    font.family: Theme.monoFont
+                    font.pixelSize: 12
+                }
+
+                CheckBox {
+                    id: cbSymbols
+                    text: "Symbols"
+                    checked: passwordGenPopup.pwSymbols
+                    onToggled: { passwordGenPopup.pwSymbols = checked; passwordGenPopup.generate() }
+                    font.family: Theme.monoFont
+                    font.pixelSize: 12
+                }
+
+                CheckBox {
+                    id: cbAmbiguous
+                    text: "Avoid ambiguous"
+                    checked: passwordGenPopup.pwAvoidAmbiguous
+                    onToggled: { passwordGenPopup.pwAvoidAmbiguous = checked; passwordGenPopup.generate() }
+                    font.family: Theme.monoFont
+                    font.pixelSize: 12
+                    Layout.columnSpan: 2
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Theme.spacingSm
+
+                GrimButton {
+                    text: "Regenerate"
+                    Layout.fillWidth: true
+                    onClicked: passwordGenPopup.generate()
+                }
+
+                GrimButton {
+                    text: "Copy"
+                    Layout.fillWidth: true
+                    onClicked: vault.copyToClipboard(passwordGenPopup.generatedPassword)
+                }
+
+                GrimButton {
+                    text: "Use"
+                    primary: true
+                    Layout.fillWidth: true
+                    onClicked: {
+                        passwordField.text = passwordGenPopup.generatedPassword
+                        passwordGenPopup.close()
                     }
                 }
             }

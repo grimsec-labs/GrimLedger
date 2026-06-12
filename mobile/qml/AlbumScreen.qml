@@ -218,6 +218,13 @@ Item {
                 Item { Layout.fillWidth: true }
 
                 GrimButton {
+                    text: "Copy Ref"
+                    onClicked: {
+                        vault.copyToClipboard("![image](grim://attachment/" + albumPreview.attachmentId + ")")
+                    }
+                }
+
+                GrimButton {
                     text: "Export"
                     onClicked: {
                         albumExportId = albumPreview.attachmentId
@@ -261,9 +268,19 @@ Item {
 
             Label {
                 Layout.fillWidth: true
+                horizontalAlignment: Text.AlignHCenter
+                text: "UUID: " + albumPreview.attachmentId
+                color: Theme.textDim
+                font.family: Theme.monoFont
+                font.pixelSize: 9
+                elide: Text.ElideMiddle
+            }
+
+            Label {
+                Layout.fillWidth: true
                 Layout.bottomMargin: Theme.spacingSm
                 horizontalAlignment: Text.AlignHCenter
-                text: "Metadata purged • XChaCha20 encrypted"
+                text: "image/png • Metadata purged • XChaCha20 encrypted"
                 color: Theme.textDim
                 font.family: Theme.monoFont
                 font.pixelSize: 10
